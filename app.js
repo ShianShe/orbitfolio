@@ -328,6 +328,7 @@
   }
   function openEditor(item = null) {
     resetForm();
+    $('#initialFees').value = '0'; $('#initialFeeField').hidden = Boolean(item);
     if (item) {
       $('#dialogTitle').textContent = '編輯持股'; $('#holdingId').value = item.id;
       $('#symbol').value = item.symbol; $('#name').value = item.name; $('#assetType').value = item.type;
@@ -338,6 +339,10 @@
     holdingDialog.showModal();
   }
   $('#symbol').addEventListener('input', () => {
+    const symbolInput = $('#symbol');
+    const cursor = symbolInput.selectionStart;
+    const uppercaseSymbol = symbolInput.value.toUpperCase();
+    if (symbolInput.value !== uppercaseSymbol) { symbolInput.value = uppercaseSymbol; symbolInput.setSelectionRange(cursor, cursor); }
     quoteLookupSequence++;
     const autoSymbol = $('#name').dataset.autoSymbol;
     if (autoSymbol && autoSymbol !== $('#symbol').value.trim().toUpperCase()) { $('#name').value = ''; delete $('#name').dataset.autoSymbol; }
@@ -375,6 +380,8 @@
     if (!name) { nameError.textContent = '請輸入股票名稱。'; valid = false; }
     if (!Number.isFinite(shares) || shares <= 0) { $('#shares').setCustomValidity('股數必須大於 0'); $('#shares').reportValidity(); valid = false; } else $('#shares').setCustomValidity('');
     if (!Number.isFinite(cost) || cost <= 0) { $('#cost').setCustomValidity('平均成本必須大於 0'); $('#cost').reportValidity(); valid = false; } else $('#cost').setCustomValidity('');
+    const initialFees = Number($('#initialFees').value || 0);
+    if (!Number.isFinite(initialFees) || initialFees < 0) { $('#initialFees').setCustomValidity('手續費不可小於 0'); $('#initialFees').reportValidity(); valid = false; } else $('#initialFees').setCustomValidity('');
     const existing = holdings.find((item) => item.symbol.toUpperCase() === symbol.toUpperCase() && item.id !== $('#holdingId').value);
     if (existing) { symbolError.textContent = '此代號已存在，請編輯既有持股。'; valid = false; }
     return valid;
@@ -388,7 +395,10 @@
     const normalizedSymbol = $('#symbol').value.trim().toUpperCase();
     const sameSymbol = previous?.symbol.toUpperCase() === normalizedSymbol;
     const fetchedQuote = quoteCache.get(normalizedSymbol);
-    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: previous && tradesFor(previous.symbol).length ? previous.shares : Number($('#shares').value), cost: previous && tradesFor(previous.symbol).length ? previous.cost : Number($('#cost').value), purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
+    const inputShares = Number($('#shares').value);
+    const inputCost = Number($('#cost').value);
+    const initialFees = previous ? 0 : Number($('#initialFees').value || 0);
+    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: previous && tradesFor(previous.symbol).length ? previous.shares : inputShares, cost: previous && tradesFor(previous.symbol).length ? previous.cost : (inputCost * inputShares + initialFees) / inputShares, purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
     const saveButton = holdingForm.querySelector('[type="submit"]'); saveButton.disabled = true;
     try {
       const saved = await persistHolding(item);
