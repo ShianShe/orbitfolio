@@ -130,10 +130,10 @@
   }
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char])); }
   function number(value) { return Number(value).toLocaleString('zh-TW', { maximumFractionDigits: 4 }); }
-  function money(value) { return `NT$ ${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+  function money(value) { return Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function wholeMoney(value) {
     const truncated = Math.trunc(Number(value) || 0);
-    return `NT$ ${Number(Object.is(truncated, -0) ? 0 : truncated).toLocaleString('zh-TW')}`;
+    return Number(Object.is(truncated, -0) ? 0 : truncated).toLocaleString('zh-TW');
   }
   function taipeiDateString(date = new Date()) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
@@ -256,7 +256,7 @@
     const totalShares = baselineShares + boughtShares;
     return totalShares > 0 ? (baselineShares * baselineCost + buyCost) / totalShares : baselineCost;
   }
-  function unitMoney(value) { return `NT$ ${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+  function unitMoney(value) { return `${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
   function getDisplayShares(item) {
     // A transaction ledger is the source of truth once transactions exist. Initial positions remain editable until then.
     const rows = tradesFor(item.symbol);
