@@ -2,6 +2,8 @@
   const HOLDINGS_KEY = 'orbitfolio.holdings.v1';
   const TRADES_KEY = 'orbitfolio.trades.v1';
   const PLANS_KEY = 'orbitfolio.exitPlans.v1';
+  const FINMIND_API = 'https://api.finmindtrade.com/api/v4/data';
+  const QUOTE_SOURCE = 'FinMind';
   const DEFAULT_HOLDINGS = [{ id: 'holding-00631L', symbol: '00631L', name: '元大台灣50正2', type: 'ETF', shares: 1200, cost: 25.5, purchaseDate: '', notes: '', price: null, createdAt: new Date().toISOString() }];
   const cloudConfig = window.ORBITFOLIO_SUPABASE || {};
   const cloudConfigured = Boolean(cloudConfig.url && cloudConfig.publishableKey);
@@ -19,6 +21,11 @@
   let trades = readJson(TRADES_KEY, []);
   let plans = readJson(PLANS_KEY, null);
   let deleteTarget = null;
+  let quoteLookupSequence = 0;
+  let quoteRefreshInFlight = false;
+  let symbolLookupPromise = Promise.resolve();
+  const stockInfoCache = new Map();
+  const quoteCache = new Map();
   if (!Array.isArray(holdings)) { holdings = DEFAULT_HOLDINGS; saveHoldings(); }
   if (!Array.isArray(trades)) { trades = []; saveTrades(); }
   if (!plans || !plans['00631L']) { plans = { ...(plans || {}), '00631L': { totalShares: 1200, batches: [400, 400, 400] } }; savePlans(); }
@@ -38,6 +45,14 @@
   }
   function toHoldingRow(item) {
     return { user_id: currentUser.id, symbol: item.symbol, name: item.name, asset_type: item.type, shares: item.shares, average_cost: item.cost, purchase_date: item.purchaseDate || null, notes: item.notes || '', latest_price: item.price ?? null, updated_at: new Date().toISOString() };
+  }
+  async function persistQuote(item, quote) {
+    if (!cloudClient || !currentUser) return;
+    const { error } = await cloudClient.from('holdings').update({
+      latest_price: quote.price,
+      updated_at: new Date().toISOString()
+    }).eq('id', item.id);
+    if (error) throw error;
   }
   async function persistHolding(item) {
     if (!cloudClient) return item;
@@ -90,6 +105,7 @@
     $('#localModeNotice').hidden = true;
     $('#authGate').hidden = true; $('#appShell').hidden = false;
     render();
+    refreshHoldingQuotes({ quiet: true });
   }
   function toHoldingRowForUser(item, user) {
     return { user_id: user.id, symbol: item.symbol, name: item.name, asset_type: item.type, shares: item.shares, average_cost: item.cost, purchase_date: item.purchaseDate || null, notes: item.notes || '', latest_price: item.price ?? null };
@@ -97,6 +113,88 @@
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char])); }
   function number(value) { return Number(value).toLocaleString('zh-TW', { maximumFractionDigits: 4 }); }
   function money(value) { return `NT$ ${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+  function taipeiDateString(date = new Date()) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  }
+  function dateDaysAgo(days) {
+    const [year, month, day] = taipeiDateString().split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day - days));
+    return date.toISOString().slice(0, 10);
+  }
+  function formatTaipeiTime(value) {
+    if (!value) return '更新時間未知';
+    return new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
+  }
+  async function fetchFinMind(params) {
+    const url = new URL(FINMIND_API);
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
+    if (!response.ok) throw new Error(`行情服務回覆 ${response.status}`);
+    const payload = await response.json();
+    if (payload.status !== 200 || !Array.isArray(payload.data)) throw new Error(payload.msg || '行情資料格式異常');
+    return payload.data;
+  }
+  async function lookupStock(symbol) {
+    const normalized = symbol.trim().toUpperCase();
+    if (!normalized) throw new Error('請先輸入股票代號。');
+    if (stockInfoCache.has(normalized)) return stockInfoCache.get(normalized);
+    const rows = await fetchFinMind({ dataset: 'TaiwanStockInfo', data_id: normalized });
+    const found = rows.find((row) => String(row.stock_id).toUpperCase() === normalized);
+    if (!found) throw new Error('查無此代號，請確認後手動輸入名稱。');
+    const info = { symbol: normalized, name: found.stock_name, type: found.industry_category === 'ETF' ? 'ETF' : '個股' };
+    stockInfoCache.set(normalized, info);
+    return info;
+  }
+  async function fetchLatestQuote(symbol) {
+    const normalized = symbol.trim().toUpperCase();
+    const rows = await fetchFinMind({ dataset: 'TaiwanStockPrice', data_id: normalized, start_date: dateDaysAgo(10) });
+    const latest = rows.filter((row) => String(row.stock_id).toUpperCase() === normalized && Number.isFinite(Number(row.close)) && Number(row.close) > 0).sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (!latest) throw new Error('資料來源目前沒有此代號的近期收盤行情。');
+    return { price: Number(latest.close), quoteDate: latest.date, quoteUpdatedAt: new Date().toISOString(), quoteSource: QUOTE_SOURCE };
+  }
+  function quoteDescription(item) {
+    if (!item.quoteDate) return '尚無行情資料日期';
+    return `${item.quoteDate} 收盤 · 更新 ${formatTaipeiTime(item.quoteUpdatedAt)}`;
+  }
+  async function refreshHoldingQuotes({ quiet = false } = {}) {
+    if (quoteRefreshInFlight || !holdings.length) return;
+    quoteRefreshInFlight = true;
+    const button = $('#refreshQuotes');
+    if (button) { button.disabled = true; button.textContent = '更新中…'; }
+    const refreshUserId = currentUser?.id || null;
+    const itemsToRefresh = [...holdings];
+    let updated = 0; let failures = 0;
+    try {
+      for (const item of itemsToRefresh) {
+        if ((currentUser?.id || null) !== refreshUserId) return;
+        try {
+          const quote = await fetchLatestQuote(item.symbol);
+          if ((currentUser?.id || null) !== refreshUserId) return;
+          const currentItem = holdings.find((holding) => holding.id === item.id);
+          if (!currentItem) continue;
+          Object.assign(currentItem, quote);
+          quoteCache.set(item.symbol.toUpperCase(), quote);
+          await persistQuote(currentItem, quote);
+          updated++;
+        } catch (error) {
+          failures++;
+          console.warn(`行情更新失敗：${item.symbol}`, error);
+        }
+      }
+      if ((currentUser?.id || null) !== refreshUserId) return;
+      saveHoldings(); render();
+      const latestDate = holdings.map((item) => item.quoteDate).filter(Boolean).sort().at(-1);
+      const status = failures
+        ? `行情更新 ${updated} 項，${failures} 項失敗${latestDate ? ` · 最新資料日 ${latestDate}` : ''}`
+        : `最新收盤行情 · 資料日 ${latestDate || '—'} · 更新 ${formatTaipeiTime(new Date().toISOString())} · 資料來源 FinMind`;
+      $('#quoteStatus').textContent = status;
+      $('#quoteStatus').classList.toggle('quote-warning', failures > 0);
+      if (!quiet) showToast(failures ? `行情更新完成，${failures} 筆未能更新` : '持股行情已更新');
+    } finally {
+      quoteRefreshInFlight = false;
+      if (button) { button.disabled = false; button.innerHTML = '↻ 更新行情'; }
+    }
+  }
   function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2400); }
   function setToday() { const now = new Date(); $('#todayLabel').textContent = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(now); }
   function tradesFor(symbol) { return trades.filter((trade) => trade.symbol === symbol); }
@@ -127,7 +225,7 @@
         <td><div class="asset-cell"><div class="ticker-icon ${item.type === 'ETF' ? 'etf' : 'stock'}">${icon}</div><div class="asset-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}${item.purchaseDate ? ` · ${escapeHtml(item.purchaseDate)}` : ''}</small></div></div></td>
         <td><span class="type-badge">${escapeHtml(item.type)}</span></td>
         <td class="numeric amount">${number(shares)}</td><td class="numeric amount">${money(cost)}</td><td class="numeric amount">${money(totalCost)}</td>
-        <td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? money(price) : '尚無行情'}</td><td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? money(market) : '—'}</td>
+        <td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? `${money(price)}<small class="quote-meta">${escapeHtml(quoteDescription(item))}</small>` : '尚無行情'}</td><td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? money(market) : '—'}</td>
         <td class="numeric ${hasPrice ? (pnl >= 0 ? 'positive' : 'negative') : 'na'}">${hasPrice ? `${pnl >= 0 ? '+' : ''}${money(pnl)}<small class="return"> ${pnl >= 0 ? '+' : ''}${(pnl / totalCost * 100).toFixed(2)}%</small>` : '—'}</td>
         <td><div class="row-actions"><button data-action="edit" data-id="${escapeHtml(item.id)}">編輯</button><button data-action="delete" data-id="${escapeHtml(item.id)}">刪除</button></div></td>
       </tr>`;
@@ -171,7 +269,7 @@
     if (position && position.initialShares == null && Number(position.shares) !== initial) { position.initialShares = Number(position.shares); saveHoldings(); }
   }
   function resetForm() {
-    holdingForm.reset(); $('#holdingId').value = ''; $('#dialogTitle').textContent = '新增持股';
+    holdingForm.reset(); $('#holdingId').value = ''; $('#dialogTitle').textContent = '新增持股'; delete $('#name').dataset.autoSymbol; symbolLookupPromise = Promise.resolve();
     document.querySelectorAll('.field-error').forEach((el) => el.textContent = '');
   }
   function openEditor(item = null) {
@@ -181,9 +279,38 @@
       $('#symbol').value = item.symbol; $('#name').value = item.name; $('#assetType').value = item.type;
       $('#shares').value = getDisplayShares(item); $('#cost').value = item.cost; $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
       if (tradesFor(item.symbol).length) $('#shares').disabled = true;
-    } else $('#shares').disabled = false;
+      $('#quoteLookupStatus').textContent = item.price != null ? `最近收盤 ${money(item.price)} · ${quoteDescription(item)}` : '尚無行情，輸入代號後可查詢。';
+    } else { $('#shares').disabled = false; $('#quoteLookupStatus').textContent = '輸入代號後自動帶入名稱及最近收盤價。'; }
     holdingDialog.showModal();
   }
+  $('#symbol').addEventListener('input', () => {
+    quoteLookupSequence++;
+    const autoSymbol = $('#name').dataset.autoSymbol;
+    if (autoSymbol && autoSymbol !== $('#symbol').value.trim().toUpperCase()) { $('#name').value = ''; delete $('#name').dataset.autoSymbol; }
+    symbolLookupPromise = Promise.resolve();
+  });
+  $('#name').addEventListener('input', () => { delete $('#name').dataset.autoSymbol; });
+  $('#symbol').addEventListener('blur', () => {
+    const symbol = $('#symbol').value.trim().toUpperCase();
+    if (!symbol) return;
+    $('#symbol').value = symbol;
+    const sequence = ++quoteLookupSequence;
+    $('#quoteLookupStatus').textContent = '查詢代號與行情中…';
+    symbolLookupPromise = (async () => {
+      try {
+        const [info, quote] = await Promise.all([lookupStock(symbol), fetchLatestQuote(symbol)]);
+        if (sequence !== quoteLookupSequence || $('#symbol').value.trim().toUpperCase() !== symbol) return;
+        if (!$('#name').value.trim() || $('#name').dataset.autoSymbol) { $('#name').value = info.name; $('#name').dataset.autoSymbol = symbol; }
+        $('#assetType').value = info.type;
+        quoteCache.set(symbol, quote);
+        $('#quoteLookupStatus').textContent = `已帶入「${info.name}」｜最近收盤 ${money(quote.price)} · ${quote.quoteDate} · FinMind`;
+      } catch (error) {
+        if (sequence === quoteLookupSequence) $('#quoteLookupStatus').textContent = `${error.message || '行情查詢失敗'}；可手動輸入名稱，價格不會填入假資料。`;
+      }
+    })();
+    return symbolLookupPromise;
+  });
+  $('#refreshQuotes').addEventListener('click', () => refreshHoldingQuotes());
   function validateForm() {
     let valid = true;
     const symbol = $('#symbol').value.trim(); const name = $('#name').value.trim();
@@ -200,10 +327,14 @@
   }
   holdingForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    await symbolLookupPromise;
     if (!validateForm()) return;
     const id = $('#holdingId').value;
     const previous = holdings.find((item) => item.id === id);
-    const item = { id: id || `holding-${Date.now()}`, symbol: $('#symbol').value.trim().toUpperCase(), name: $('#name').value.trim(), type: $('#assetType').value, shares: Number($('#shares').value), cost: Number($('#cost').value), purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: previous?.price ?? null, createdAt: previous?.createdAt || new Date().toISOString() };
+    const normalizedSymbol = $('#symbol').value.trim().toUpperCase();
+    const sameSymbol = previous?.symbol.toUpperCase() === normalizedSymbol;
+    const fetchedQuote = quoteCache.get(normalizedSymbol);
+    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: Number($('#shares').value), cost: Number($('#cost').value), purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
     const saveButton = holdingForm.querySelector('[type="submit"]'); saveButton.disabled = true;
     try {
       const saved = await persistHolding(item);
@@ -347,6 +478,7 @@
     $('#syncDetail').textContent = '資料保存在此瀏覽器';
     $('#localModeNotice').hidden = false;
     render();
+    refreshHoldingQuotes({ quiet: true });
   } else if (!cloudClient) {
     showAuthGate('無法載入 Supabase 用戶端。請確認網路連線，或重新部署網站。');
   } else {

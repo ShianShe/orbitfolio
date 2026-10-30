@@ -12,7 +12,7 @@
 
 ## 跨裝置登入與同步
 
-前端已支援 Supabase Email／密碼登入，以及登入後的持股、退出計畫雲端載入與持股 CRUD。資料表和每位使用者的 Row Level Security 政策位於 `supabase/schema.sql`。
+前端已支援 Supabase Email／密碼登入，以及登入後的持股、退出計畫雲端載入與持股 CRUD。行情由 FinMind 提供最近收盤日資料（非盤中即時）；資料表和每位使用者的 Row Level Security 政策位於 `supabase/schema.sql`。
 
 1. 在 `orbitfolio` Supabase 專案的 SQL Editor 執行 `supabase/schema.sql`。
 2. Authentication → URL Configuration：將 Site URL 設為 `https://shianshe.github.io/orbitfolio/`，並將 `https://shianshe.github.io/orbitfolio/**` 加到 Redirect URLs。
@@ -21,4 +21,6 @@
 
 前端需要的 Publishable／anon key 是公開值，安全性由 RLS 政策提供。絕不可把 `service_role` key 放進前端或提交至 repository。當雲端已存在資料時，登入會以雲端資料為準，不會覆寫雲端資料。
 
-目前尚未實作交易紀錄操作介面、行情來源或實際成交記帳；`trades` 資料表已建立，未來交易功能需新增不可覆寫的成交紀錄。
+行情資料來源為 FinMind，免費方案限非商業用途，網站會標示來源；API 每小時有呼叫上限。資料來源故障時保留既有行情並顯示警告。
+
+目前尚未實作交易紀錄操作介面或實際成交記帳；`trades` 資料表已建立，未來交易功能需新增不可覆寫的成交紀錄。
