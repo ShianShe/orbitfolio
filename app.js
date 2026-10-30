@@ -236,9 +236,9 @@
     const details = rows.map((trade) => {
       const date = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
       const totalCost = Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0);
-      return `<tr><td>${date}</td><td>${trade.side === 'buy' ? '買進' : '賣出'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
+      return `<tr><td>${date}</td><td>${trade.side === 'buy' ? '買進' : '賣出'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
     }).join('');
-    return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">每股成本（含費）</th><th class="numeric">本次總成本</th><th>備註</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
+    return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">成交單價</th><th class="numeric">手續費</th><th class="numeric">本次總成本</th><th>備註</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
   }
   function soldShares(symbol) { return tradesFor(symbol).filter((trade) => trade.side === 'sell').reduce((sum, trade) => sum + Number(trade.shares || 0), 0); }
   function getDisplayCost(item) {
@@ -406,30 +406,49 @@
     $('#buyHoldingId').value = item.id;
     $('#buySymbolLabel').textContent = `${item.symbol} ${item.name}`;
     $('#buyShares').value = '';
+    $('#buyPrice').value = '';
+    $('#buyFees').value = '0';
     $('#buyDate').value = taipeiDateString();
     $('#buyNotes').value = '';
+    updateBuyTotalPreview();
     $('#buyDialog').showModal();
   }
+  function updateBuyTotalPreview() {
+    const shares = Number($('#buyShares').value);
+    const price = Number($('#buyPrice').value);
+    const fees = Number($('#buyFees').value || 0);
+    const total = shares > 0 && price > 0 && fees >= 0 ? shares * price + fees : 0;
+    $('#buyTotalPreview').textContent = money(total);
+  }
+  ['#buyShares', '#buyPrice', '#buyFees'].forEach((selector) => $(selector).addEventListener('input', updateBuyTotalPreview));
   $('#buyForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const item = holdings.find((holding) => holding.id === $('#buyHoldingId').value);
     if (!item) return;
     const shares = Number($('#buyShares').value);
-    const totalCost = Number($('#buyTotalCost').value);
-    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(totalCost) || totalCost <= 0) {
-      showMessage('資料需確認', '買進股數與本次總成本都必須大於 0。'); return;
+    const price = Number($('#buyPrice').value);
+    const fees = Number($('#buyFees').value || 0);
+    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
+      showMessage('資料需確認', '股數與成交單價必須大於 0，手續費不可小於 0。'); return;
     }
-    const allInUnitCost = totalCost / shares;
     const date = $('#buyDate').value;
     if (!date || Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())) { showMessage('資料需確認', '請選擇有效的成交日期。'); return; }
-    const trade = { symbol: item.symbol, side: 'buy', shares, price: allInUnitCost, fees: 0, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
-    const button = $('#buySubmit'); button.disabled = true;
+    const trade = { symbol: item.symbol, side: 'buy', shares, price, fees, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
+    const keepAdding = event.submitter?.id === 'buySaveContinue';
+    const buttons = [$('#buySubmit'), $('#buySaveContinue')]; buttons.forEach((button) => { button.disabled = true; });
     try {
       const saved = await persistTrade(item, trade);
-      trades.push(saved); saveTrades(); expandedTradeDetails.add(item.id); render(); $('#buyDialog').close();
-      showToast(`買進紀錄已新增，持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
+      trades.push(saved); saveTrades(); expandedTradeDetails.add(item.id); render();
+      if (keepAdding) {
+        $('#buyShares').value = ''; $('#buyPrice').value = ''; $('#buyFees').value = '0'; $('#buyNotes').value = '';
+        updateBuyTotalPreview(); $('#buyShares').focus();
+        showToast(`本筆已儲存；目前持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
+      } else {
+        $('#buyDialog').close();
+        showToast(`買進紀錄已新增，持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
+      }
     } catch (error) { showMessage('買進紀錄儲存失敗', error.message || '請確認雲端連線後重試。'); }
-    finally { button.disabled = false; }
+    finally { buttons.forEach((button) => { button.disabled = false; }); }
   });
   holdingsBody.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]'); if (!button) return;

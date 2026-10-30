@@ -140,12 +140,14 @@
       <input type="hidden" id="buyHoldingId">
       <div class="form-grid">
         <label class="field"><span>買進股數 <b>*</b></span><input id="buyShares" type="number" min="0.0001" step="0.0001" required placeholder="例如 10"></label>
-        <label class="field full"><span>本次總成本（含手續費） <b>*</b></span><div class="input-prefix"><span>NT$</span><input id="buyTotalCost" type="number" min="0.01" step="0.01" required placeholder="輸入券商明細的總成本"></div></label>
+        <label class="field"><span>買進單價 <b>*</b></span><div class="input-prefix"><span>NT$</span><input id="buyPrice" type="number" min="0.0001" step="any" required placeholder="券商成交單價"></div></label>
+        <label class="field"><span>手續費 <small>選填，依券商實際金額</small></span><div class="input-prefix"><span>NT$</span><input id="buyFees" type="number" min="0" step="0.01" value="0" placeholder="0"></div></label>
+        <div class="field"><span>本次總成本（自動計算）</span><div class="purchase-total-preview" id="buyTotalPreview">NT$ 0.00</div></div>
         <label class="field"><span>成交日期 <b>*</b></span><input id="buyDate" type="date" required></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="buyNotes" rows="2" maxlength="500" placeholder="例如：盤中零股買進"></textarea></label>
       </div>
-      <div class="modal-info">請輸入券商 App 明細顯示的本次總成本（已含手續費）。買進後系統會新增成交紀錄、增加持有股數，並以該總成本計算加權均價。</div>
-      <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button primary" id="buySubmit">確認買進</button></div>
+      <div class="modal-info">每筆成交會獨立保存。輸入實際成交單價及券商顯示的手續費，系統以「股數 × 單價 + 手續費」計入總成本與加權均價；不會估算手續費。</div>
+      <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button subtle" id="buySaveContinue">儲存並新增下一筆</button><button type="submit" class="button primary" id="buySubmit">確認買進</button></div>
     </form>
   </dialog>
 
