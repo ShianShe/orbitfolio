@@ -88,10 +88,18 @@
         <div class="table-footer"><span id="tableSummary">顯示 1 項資產</span><span id="quoteStatus" role="status">尚未取得行情 · 顯示最近收盤價，非盤中即時價</span></div><div class="quote-attribution">行情來源：<a href="https://finmind.github.io/" target="_blank" rel="noopener noreferrer">FinMind</a> · 平日約 17:30 更新；實際以資料來源為準。</div>
       </section>
 
+      <section class="trade-history-section" id="trade-history">
+        <div class="section-heading"><div><h2>成交紀錄</h2><p>每筆買進分開保存，股數與均價依紀錄自動計算。</p></div></div>
+        <div class="table-wrap trade-table-wrap"><table id="tradesTable" hidden>
+          <thead><tr><th>成交日期</th><th>資產</th><th>方向</th><th class="numeric">股數</th><th class="numeric">成交價</th><th class="numeric">手續費</th><th>備註</th></tr></thead>
+          <tbody id="tradesBody"></tbody>
+        </table><div class="empty-state" id="tradesEmpty"><strong>目前沒有成交紀錄</strong><span>可在持股清單按「新增買進」記錄零股成交。</span></div></div>
+      </section>
+
       <section class="exit-section" id="exit-plan">
         <div class="exit-heading"><div class="exit-symbol">↗</div><div><div class="eyebrow">EXIT PLAN</div><h2>00631L 分批退出計畫</h2><p>每批 400 股，僅在確認實際成交後更新持有部位。</p></div><span class="plan-status"><i></i>進行中</span></div>
         <div class="exit-progress"><div class="progress-title"><strong>退出進度</strong><span id="exitProgressText">0 / 1,200 股已賣出</span></div><div class="progress-track"><span id="exitProgressBar"></span></div><div class="batch-grid" id="batchGrid"></div></div>
-        <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股。完成交易後，請新增交易紀錄；持股數量將依交易紀錄計算。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
+        <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股；此版僅支援新增買進紀錄，尚未提供賣出記帳。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
       </section>
       <footer class="page-footer"><span>Orbitfolio <span>·</span> 你的投資，清晰管理。</span><span>資料儲存在你的瀏覽器中</span></footer>
     </main>
@@ -106,7 +114,7 @@
         <label class="field"><span>股票名稱 <b>*</b></span><input id="name" required maxlength="60" placeholder="輸入資產名稱"><small class="field-error" data-error="name"></small></label><div class="quote-lookup" id="quoteLookupStatus" role="status" aria-live="polite">輸入代號後自動帶入名稱及最近收盤價。</div>
         <label class="field"><span>資產類型 <b>*</b></span><select id="assetType" required><option value="ETF">ETF</option><option value="個股">個股</option></select></label>
         <label class="field"><span>持有股數 <b>*</b></span><input id="shares" type="number" min="0.0001" step="any" required placeholder="0"></label>
-        <label class="field"><span>平均成本 <b>*</b></span><div class="input-prefix"><span>NT$</span><input id="cost" type="number" min="0.0001" step="any" required placeholder="0.00"></div></label>
+        <label class="field"><span>平均成本 <b>*</b></span><div class="input-prefix"><span>NT$</span><input id="cost" type="number" min="0.0001" step="any" required placeholder="0.00"></div><small class="field-hint" id="costLockHint" hidden>已有成交紀錄；均價由持股基礎與買進紀錄計算。請新增買進，不要覆寫歷史。</small></label>
         <label class="field"><span>買進日期 <small>選填</small></span><input id="purchaseDate" type="date"></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="notes" rows="3" maxlength="500" placeholder="新增備註"></textarea></label>
       </div>
@@ -115,9 +123,25 @@
     </form>
   </dialog>
 
+  <dialog id="buyDialog" class="modal">
+    <form id="buyForm" novalidate>
+      <div class="modal-header"><div><div class="eyebrow">BUY TRANSACTION</div><h2>新增買進紀錄</h2><p class="buy-symbol" id="buySymbolLabel"></p></div><button type="button" class="close-button" data-close aria-label="關閉">×</button></div>
+      <input type="hidden" id="buyHoldingId">
+      <div class="form-grid">
+        <label class="field"><span>買進股數 <b>*</b></span><input id="buyShares" type="number" min="0.0001" step="0.0001" required placeholder="例如 10"></label>
+        <label class="field"><span>成交單價 <b>*</b></span><div class="input-prefix"><span>NT$</span><input id="buyPrice" type="number" min="0.0001" step="0.01" required placeholder="實際成交價"></div></label>
+        <label class="field"><span>手續費 <small>選填</small></span><div class="input-prefix"><span>NT$</span><input id="buyFees" type="number" min="0" step="0.01" value="0"></div></label>
+        <label class="field"><span>成交日期 <b>*</b></span><input id="buyDate" type="date" required></label>
+        <label class="field full"><span>備註 <small>選填</small></span><textarea id="buyNotes" rows="2" maxlength="500" placeholder="例如：盤中零股買進"></textarea></label>
+      </div>
+      <div class="modal-info">手續費請照券商 App 顯示手動填入，系統不估算；買進後會新增成交紀錄、增加持有股數，並以你輸入的手續費計入加權均價。</div>
+      <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button primary" id="buySubmit">確認買進</button></div>
+    </form>
+  </dialog>
+
   <dialog id="confirmDialog" class="modal confirm-modal"><div class="confirm-icon">!</div><h2>刪除這筆持股？</h2><p>刪除後無法復原。相關交易紀錄（若有）不會一併刪除。</p><div class="modal-actions"><button class="button subtle" data-close>取消</button><button class="button danger" id="confirmDelete">確認刪除</button></div></dialog>
   <dialog id="messageDialog" class="modal confirm-modal"><div class="confirm-icon success">✓</div><h2 id="messageTitle">完成</h2><p id="messageText"></p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
-  <dialog id="exitInfoDialog" class="modal confirm-modal"><div class="confirm-icon success">↗</div><h2>分三批退出</h2><p>00631L 初始持有 1,200 股，規劃分三批、每批 400 股。每批成交後應新增交易紀錄；成交紀錄是持股變動的依據。</p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
+  <dialog id="exitInfoDialog" class="modal confirm-modal"><div class="confirm-icon success">↗</div><h2>分三批退出</h2><p>00631L 初始持有 1,200 股，規劃分三批、每批 400 股。賣出建議不會自動扣除持股；目前成交紀錄已支援買進，賣出記帳功能尚未開放。</p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>

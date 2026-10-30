@@ -6,3 +6,5 @@
 [hidden]{display:none!important}.cloud-sync-dot{background:#559b6b!important;box-shadow:0 0 0 3px #e0f0e4!important}
 
 .heading-actions{display:flex;gap:8px;align-items:center}.quote-meta{display:block;margin-top:4px;font-size:9px;color:#929990;font-weight:400}.quote-lookup{grid-column:1/-1;margin-top:-8px;padding:9px 10px;border-radius:6px;background:#f6f8f4;color:#718173;font-size:10px;line-height:1.5}.quote-warning{color:#b35b50!important}.quote-attribution{padding:0 2px 8px;color:#9aa198;font-size:9px}.quote-attribution a{color:#688b70}.table-footer #quoteStatus{max-width:70%;text-align:right}.field-error:not(:empty){color:#bd514a}@media(max-width:760px){.heading-actions{gap:5px}.heading-actions .button{padding:8px 7px;font-size:9px}.table-footer #quoteStatus{max-width:62%;font-size:8px}.quote-lookup{font-size:9px}}
+
+.trade-history-section{margin-top:28px}.trade-table-wrap{border-radius:8px}.trade-table-wrap table{min-width:720px}.field-hint{font-size:9px;color:#9a7a49;line-height:1.5}.buy-symbol{margin-top:5px;color:#7f897f;font-size:11px}.trade-history-section .section-heading{margin-bottom:13px}
