@@ -29,14 +29,14 @@
   </section>
   <div class="app-shell" id="appShell">
     <aside class="sidebar">
-      <a class="brand" href="#" aria-label="持股管理首頁">
+      <a class="brand" href="#overview" aria-label="投資總覽">
         <span class="brand-mark">O</span><span>orbit<span class="brand-light">folio</span></span>
       </a>
       <div class="workspace-label">個人工作區</div>
       <nav class="main-nav" aria-label="主要導覽">
-        <a href="#overview" class="nav-item"><span class="nav-icon">◫</span>投資總覽</a>
-        <a href="#holdings" class="nav-item active"><span class="nav-icon">▤</span>我的持股<span class="nav-count" id="navCount">1</span></a>
-        <a href="#exit-plan" class="nav-item"><span class="nav-icon">↗</span>退出計畫</a>
+        <a href="#overview" class="nav-item" data-route="overview"><span class="nav-icon">◫</span>投資總覽</a>
+        <a href="#holdings" class="nav-item" data-route="holdings"><span class="nav-icon">▤</span>我的持股<span class="nav-count" id="navCount">1</span></a>
+        <a href="#plans" class="nav-item" data-route="plans"><span class="nav-icon">↗</span>持股計劃</a>
       </nav>
       <div class="sidebar-bottom">
         <div class="sync-card"><span class="sync-dot" id="syncDot"></span><div><strong id="syncTitle">單一裝置模式</strong><small id="syncDetail">資料保存在此瀏覽器</small></div></div>
@@ -44,63 +44,74 @@
       </div>
     </aside>
 
-    <main class="main-content" id="overview">
+    <main class="main-content" id="appMain">
       <header class="topbar">
-        <div class="breadcrumb">投資組合 <span>/</span> 我的持股</div>
+        <div class="breadcrumb">投資組合 <span>/</span> <span id="currentPageLabel">投資總覽</span></div>
         <div class="top-actions"><span class="today-label" id="todayLabel"></span><span class="account-email" id="accountEmail" hidden></span><button class="button subtle signout-button" id="signOut" hidden>登出</button><div class="avatar small">S</div></div>
       </header>
 
-      <section class="page-heading">
-        <div><div class="eyebrow">PORTFOLIO</div><h1>我的持股</h1><p>管理你的投資部位，掌握每一筆資產配置。</p></div>
-        <button class="button primary" id="addHolding"><span class="plus">＋</span>新增持股</button>
-      </section>
-      <div class="cloud-notice" id="localModeNotice"><span>ⓘ</span><p>目前是單一裝置模式。完成 Supabase 設定並登入後，持股才會跨裝置同步。</p></div>
+      <div class="page-view" data-page-view="overview">
+        <section class="page-heading">
+          <div><div class="eyebrow">OVERVIEW</div><h1>投資總覽</h1><p>集中查看投資成本、市值與整體損益。</p></div>
+          <a class="button primary" href="#holdings">查看我的持股</a>
+        </section>
+        <div class="cloud-notice" id="localModeNotice"><span>ⓘ</span><p>目前是單一裝置模式。完成 Supabase 設定並登入後，持股才會跨裝置同步。</p></div>
+        <section class="summary-grid" aria-label="投資總覽">
+          <article class="summary-card total-card">
+            <div class="card-top"><span>總投入成本</span><span class="card-icon violet">◈</span></div>
+            <div class="metric" id="totalCost">NT$ 0</div><div class="card-foot"><span class="mini-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="assetCount">0 項資產</span></div>
+          </article>
+          <article class="summary-card">
+            <div class="card-top"><span>目前市值</span><span class="card-icon blue">▧</span></div>
+            <div class="metric" id="marketValue">—</div><div class="card-foot"><span class="muted-dot"></span><span id="marketNote">尚無行情資料</span></div>
+          </article>
+          <article class="summary-card">
+            <div class="card-top"><span>未實現損益</span><span class="card-icon green">↗</span></div>
+            <div class="metric" id="unrealized">—</div><div class="card-foot"><span>待取得最新價格</span></div>
+          </article>
+          <article class="summary-card allocation-card">
+            <div class="card-top"><span>資產配置</span><span class="card-icon amber">◉</span></div>
+            <div class="allocation"><div class="donut"><span id="allocationCount">1</span></div><div><strong id="allocationTypes">ETF 100%</strong><small>依投入成本計算</small></div></div>
+          </article>
+        </section>
+      </div>
 
-      <section class="summary-grid" aria-label="投資總覽">
-        <article class="summary-card total-card">
-          <div class="card-top"><span>總投入成本</span><span class="card-icon violet">◈</span></div>
-          <div class="metric" id="totalCost">NT$ 0</div><div class="card-foot"><span class="mini-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="assetCount">0 項資產</span></div>
-        </article>
-        <article class="summary-card">
-          <div class="card-top"><span>目前市值</span><span class="card-icon blue">▧</span></div>
-          <div class="metric" id="marketValue">—</div><div class="card-foot"><span class="muted-dot"></span><span id="marketNote">尚無行情資料</span></div>
-        </article>
-        <article class="summary-card">
-          <div class="card-top"><span>未實現損益</span><span class="card-icon green">↗</span></div>
-          <div class="metric" id="unrealized">—</div><div class="card-foot"><span>待取得最新價格</span></div>
-        </article>
-        <article class="summary-card allocation-card">
-          <div class="card-top"><span>資產配置</span><span class="card-icon amber">◉</span></div>
-          <div class="allocation"><div class="donut"><span id="allocationCount">1</span></div><div><strong id="allocationTypes">ETF 100%</strong><small>依投入成本計算</small></div></div>
-        </article>
-      </section>
+      <div class="page-view" data-page-view="holdings" hidden>
+        <section class="page-heading">
+          <div><div class="eyebrow">MY HOLDINGS</div><h1>我的持股</h1><p>管理持股、更新行情，並展開個別成交明細。</p></div>
+          <button class="button primary" id="addHolding"><span class="plus">＋</span>新增持股</button>
+        </section>
+        <section class="holdings-section" id="holdings-list">
+          <div class="section-heading"><div><h2>持股清單 <span class="count-pill" id="holdingCount">1</span></h2><p>依資產列出部位與目前損益。</p></div><div class="heading-actions"><button class="button subtle" id="refreshQuotes">↻ 更新行情</button><button class="button subtle" id="exportCsv"><span>⇩</span>匯出 CSV</button></div></div>
+          <div class="toolbar">
+            <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱"><kbd>⌘ K</kbd></label>
+            <div class="toolbar-right"><label class="filter-wrap"><span>類型</span><select id="typeFilter" aria-label="依資產類型篩選"><option value="all">全部類型</option><option value="ETF">ETF</option><option value="個股">個股</option></select></label><label class="import-button button subtle">⇧ 匯入 CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden></label></div>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th class="check-cell"><input type="checkbox" aria-label="選取全部" disabled></th><th>資產 <span class="sort">↕</span></th><th>類型</th><th class="numeric">持有股數</th><th class="numeric">平均成本</th><th class="numeric">總投入成本</th><th class="numeric">最新收盤價</th><th class="numeric">市值</th><th class="numeric">未實現損益</th><th></th></tr></thead>
+            <tbody id="holdingsBody"></tbody>
+          </table><div class="empty-state" id="emptyState" hidden><div class="empty-icon">⌕</div><strong>找不到符合條件的持股</strong><span>試試其他關鍵字或篩選條件。</span></div></div>
+          <div class="table-footer"><span id="tableSummary">顯示 1 項資產</span><span id="quoteStatus" role="status">尚未取得行情 · 顯示最近收盤價，非盤中即時價</span></div><div class="quote-attribution">行情來源：<a href="https://finmind.github.io/" target="_blank" rel="noopener noreferrer">FinMind</a> · 平日約 17:30 更新；實際以資料來源為準。</div>
+        </section>
+      </div>
 
-      <section class="holdings-section" id="holdings">
-        <div class="section-heading"><div><h2>持股清單 <span class="count-pill" id="holdingCount">1</span></h2><p>你的所有股票與 ETF 都在這裡。</p></div><div class="heading-actions"><button class="button subtle" id="refreshQuotes">↻ 更新行情</button><button class="button subtle" id="exportCsv"><span>⇩</span>匯出 CSV</button></div></div>
-        <div class="toolbar">
-          <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱"><kbd>⌘ K</kbd></label>
-          <div class="toolbar-right"><label class="filter-wrap"><span>類型</span><select id="typeFilter" aria-label="依資產類型篩選"><option value="all">全部類型</option><option value="ETF">ETF</option><option value="個股">個股</option></select></label><label class="import-button button subtle">⇧ 匯入 CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden></label></div>
-        </div>
-        <div class="table-wrap"><table>
-          <thead><tr><th class="check-cell"><input type="checkbox" aria-label="選取全部" disabled></th><th>資產 <span class="sort">↕</span></th><th>類型</th><th class="numeric">持有股數</th><th class="numeric">平均成本</th><th class="numeric">總投入成本</th><th class="numeric">最新收盤價</th><th class="numeric">市值</th><th class="numeric">未實現損益</th><th></th></tr></thead>
-          <tbody id="holdingsBody"></tbody>
-        </table><div class="empty-state" id="emptyState" hidden><div class="empty-icon">⌕</div><strong>找不到符合條件的持股</strong><span>試試其他關鍵字或篩選條件。</span></div></div>
-        <div class="table-footer"><span id="tableSummary">顯示 1 項資產</span><span id="quoteStatus" role="status">尚未取得行情 · 顯示最近收盤價，非盤中即時價</span></div><div class="quote-attribution">行情來源：<a href="https://finmind.github.io/" target="_blank" rel="noopener noreferrer">FinMind</a> · 平日約 17:30 更新；實際以資料來源為準。</div>
-      </section>
-
-      <section class="trade-history-section" id="trade-history">
-        <div class="section-heading"><div><h2>成交紀錄</h2><p>每筆買進分開保存，股數與均價依紀錄自動計算。</p></div></div>
-        <div class="table-wrap trade-table-wrap"><table id="tradesTable" hidden>
-          <thead><tr><th>成交日期</th><th>資產</th><th>方向</th><th class="numeric">股數</th><th class="numeric">每股成本（含費）</th><th class="numeric">本次總成本</th><th>備註</th></tr></thead>
-          <tbody id="tradesBody"></tbody>
-        </table><div class="empty-state" id="tradesEmpty"><strong>目前沒有成交紀錄</strong><span>可在持股清單按「新增買進」記錄零股成交。</span></div></div>
-      </section>
-
-      <section class="exit-section" id="exit-plan">
-        <div class="exit-heading"><div class="exit-symbol">↗</div><div><div class="eyebrow">EXIT PLAN</div><h2>00631L 分批退出計畫</h2><p>每批 400 股，僅在確認實際成交後更新持有部位。</p></div><span class="plan-status"><i></i>進行中</span></div>
-        <div class="exit-progress"><div class="progress-title"><strong>退出進度</strong><span id="exitProgressText">0 / 1,200 股已賣出</span></div><div class="progress-track"><span id="exitProgressBar"></span></div><div class="batch-grid" id="batchGrid"></div></div>
-        <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股；此版僅支援新增買進紀錄，尚未提供賣出記帳。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
-      </section>
+      <div class="page-view" data-page-view="plans" hidden>
+        <section class="page-heading">
+          <div><div class="eyebrow">HOLDING PLAN</div><h1>持股計劃</h1><p>查看 00631L 分批退出目標與目前進度。</p></div>
+        </section>
+        <section class="exit-section" id="plan-details">
+          <div class="exit-heading"><div class="exit-symbol">↗</div><div><div class="eyebrow">00631L EXIT PLAN</div><h2>00631L 分批退出計畫</h2><p>每批 400 股，僅在確認實際成交後更新持有部位。</p></div><span class="plan-status"><i></i>進行中</span></div>
+          <div class="exit-progress"><div class="progress-title"><strong>退出進度</strong><span id="exitProgressText">0 / 1,200 股已賣出</span></div><div class="progress-track"><span id="exitProgressBar"></span></div><div class="batch-grid" id="batchGrid"></div></div>
+          <div class="plan-details-grid">
+            <article class="plan-detail-card"><small>計劃標的</small><strong>00631L 元大台灣50正2</strong></article>
+            <article class="plan-detail-card"><small>退出目標</small><strong>1,200 股 · 分 3 批</strong></article>
+            <article class="plan-detail-card"><small>每批數量</small><strong>400 股</strong></article>
+            <article class="plan-detail-card"><small>資金安排</small><strong>賣出後先保留現金</strong></article>
+          </div>
+          <div class="plan-principle"><strong>執行原則</strong><p>避免市場急跌時恐慌賣出，同時避免只因等待回本而無限期延後退出。市場弱勢持續時，重新評估槓桿持有風險。</p></div>
+          <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股；此版僅支援新增買進紀錄，尚未提供賣出記帳。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
+        </section>
+      </div>
       <footer class="page-footer"><span>Orbitfolio <span>·</span> 你的投資，清晰管理。</span><span>資料儲存在你的瀏覽器中</span></footer>
     </main>
   </div>

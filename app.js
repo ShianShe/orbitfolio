@@ -26,6 +26,7 @@
   let symbolLookupPromise = Promise.resolve();
   const stockInfoCache = new Map();
   const quoteCache = new Map();
+  const expandedTradeDetails = new Set();
   if (!Array.isArray(holdings)) { holdings = DEFAULT_HOLDINGS; saveHoldings(); }
   if (!Array.isArray(trades)) { trades = []; saveTrades(); }
   if (!plans || !plans['00631L']) { plans = { ...(plans || {}), '00631L': { totalShares: 1200, batches: [400, 400, 400] } }; savePlans(); }
@@ -214,7 +215,31 @@
   }
   function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2400); }
   function setToday() { const now = new Date(); $('#todayLabel').textContent = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(now); }
+  const pageLabels = { overview: '投資總覽', holdings: '我的持股', plans: '持股計劃' };
+  function showCurrentPage() {
+    let page = window.location.hash.slice(1);
+    if (!Object.hasOwn(pageLabels, page)) page = 'overview';
+    document.querySelectorAll('[data-page-view]').forEach((view) => { view.hidden = view.dataset.pageView !== page; });
+    document.querySelectorAll('.nav-item[data-route]').forEach((link) => {
+      const active = link.dataset.route === page;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+    });
+    $('#currentPageLabel').textContent = pageLabels[page];
+    if (window.location.hash !== `#${page}`) history.replaceState(null, '', `#${page}`);
+  }
+  window.addEventListener('hashchange', showCurrentPage);
   function tradesFor(symbol) { return trades.filter((trade) => trade.symbol === symbol); }
+  function renderTradeDetails(item) {
+    const rows = [...tradesFor(item.symbol)].sort((a, b) => String(b.tradedAt).localeCompare(String(a.tradedAt)));
+    if (!rows.length) return '<div class="transaction-empty">這檔持股目前沒有成交紀錄。</div>';
+    const details = rows.map((trade) => {
+      const date = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
+      const totalCost = Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0);
+      return `<tr><td>${date}</td><td>${trade.side === 'buy' ? '買進' : '賣出'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
+    }).join('');
+    return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">每股成本（含費）</th><th class="numeric">本次總成本</th><th>備註</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
+  }
   function soldShares(symbol) { return tradesFor(symbol).filter((trade) => trade.side === 'sell').reduce((sum, trade) => sum + Number(trade.shares || 0), 0); }
   function getDisplayCost(item) {
     const baselineShares = Number(item.initialShares ?? item.shares) || 0;
@@ -247,6 +272,8 @@
       const market = hasPrice ? shares * price : null;
       const pnl = hasPrice ? market - totalCost : null;
       const icon = escapeHtml(item.symbol.slice(0, 4));
+      const itemTrades = tradesFor(item.symbol);
+      const detailsOpen = expandedTradeDetails.has(item.id);
       return `<tr>
         <td class="check-cell"><input type="checkbox" aria-label="選取 ${escapeHtml(item.symbol)}" disabled></td>
         <td><div class="asset-cell"><div class="ticker-icon ${item.type === 'ETF' ? 'etf' : 'stock'}">${icon}</div><div class="asset-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}${item.purchaseDate ? ` · ${escapeHtml(item.purchaseDate)}` : ''}</small></div></div></td>
@@ -254,8 +281,8 @@
         <td class="numeric amount">${number(shares)}</td><td class="numeric amount">${unitMoney(cost)}</td><td class="numeric amount">${money(totalCost)}</td>
         <td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? `${money(price)}<small class="quote-meta">${escapeHtml(quoteDescription(item))}</small>` : '尚無行情'}</td><td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? money(market) : '—'}</td>
         <td class="numeric ${hasPrice ? (pnl >= 0 ? 'positive' : 'negative') : 'na'}">${hasPrice ? `${pnl >= 0 ? '+' : ''}${money(pnl)}<small class="return"> ${pnl >= 0 ? '+' : ''}${(pnl / totalCost * 100).toFixed(2)}%</small>` : '—'}</td>
-        <td><div class="row-actions"><button data-action="buy" data-id="${escapeHtml(item.id)}">新增買進</button><button data-action="edit" data-id="${escapeHtml(item.id)}">編輯</button><button data-action="delete" data-id="${escapeHtml(item.id)}">刪除</button></div></td>
-      </tr>`;
+        <td><div class="row-actions"><button data-action="buy" data-id="${escapeHtml(item.id)}">新增買進</button><button data-action="details" data-id="${escapeHtml(item.id)}" aria-expanded="${detailsOpen}">交易明細${itemTrades.length ? ` ${itemTrades.length}` : ''}</button><button data-action="edit" data-id="${escapeHtml(item.id)}">編輯</button><button data-action="delete" data-id="${escapeHtml(item.id)}">刪除</button></div></td>
+      </tr>${detailsOpen ? `<tr class="transaction-detail-row"><td colspan="10">${renderTradeDetails(item)}</td></tr>` : ''}`;
     }).join('');
     $('#emptyState').hidden = filtered.length > 0;
     $('#holdingCount').textContent = holdings.length;
@@ -278,18 +305,6 @@
     $('#allocationCount').textContent = holdings.length;
     $('#allocationTypes').textContent = stockCost > 0 ? `ETF ${etfPct}% · 個股 ${100 - etfPct}%` : `ETF ${etfPct}%`;
     renderPlan();
-    renderTrades();
-  }
-  function renderTrades() {
-    const body = $('#tradesBody');
-    const ordered = [...trades].sort((a, b) => String(b.tradedAt).localeCompare(String(a.tradedAt)));
-    body.innerHTML = ordered.map((trade) => {
-      const item = holdings.find((holding) => holding.symbol === trade.symbol);
-      const tradeDate = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
-      return `<tr><td>${tradeDate}</td><td>${escapeHtml(trade.symbol)}${item ? ` ${escapeHtml(item.name)}` : ''}</td><td>${trade.side === 'buy' ? '買進' : '賣出'}</td><td class="numeric amount">${number(trade.shares)} 股</td><td class="numeric amount">${unitMoney(trade.price)}</td><td class="numeric amount">${money(Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0))}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
-    }).join('');
-    $('#tradesEmpty').hidden = ordered.length > 0;
-    $('#tradesTable').hidden = ordered.length === 0;
   }
   function renderPlan() {
     const plan = plans['00631L'];
@@ -411,7 +426,7 @@
     const button = $('#buySubmit'); button.disabled = true;
     try {
       const saved = await persistTrade(item, trade);
-      trades.push(saved); saveTrades(); render(); $('#buyDialog').close();
+      trades.push(saved); saveTrades(); expandedTradeDetails.add(item.id); render(); $('#buyDialog').close();
       showToast(`買進紀錄已新增，持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
     } catch (error) { showMessage('買進紀錄儲存失敗', error.message || '請確認雲端連線後重試。'); }
     finally { button.disabled = false; }
@@ -419,6 +434,7 @@
   holdingsBody.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]'); if (!button) return;
     const item = holdings.find((row) => row.id === button.dataset.id); if (!item) return;
+    if (button.dataset.action === 'details') { if (expandedTradeDetails.has(item.id)) expandedTradeDetails.delete(item.id); else expandedTradeDetails.add(item.id); render(); return; }
     if (button.dataset.action === 'buy') openBuyDialog(item);
     if (button.dataset.action === 'edit') openEditor(item);
     if (button.dataset.action === 'delete') { deleteTarget = item.id; $('#confirmDialog').showModal(); }
@@ -545,6 +561,7 @@
   });
 
   setToday();
+  showCurrentPage();
   if (!cloudConfigured) {
     $('#syncTitle').textContent = '尚未連接雲端';
     $('#syncDetail').textContent = '資料保存在此瀏覽器';
