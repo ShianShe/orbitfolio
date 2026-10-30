@@ -286,7 +286,7 @@
     body.innerHTML = ordered.map((trade) => {
       const item = holdings.find((holding) => holding.symbol === trade.symbol);
       const tradeDate = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
-      return `<tr><td>${tradeDate}</td><td>${escapeHtml(trade.symbol)}${item ? ` ${escapeHtml(item.name)}` : ''}</td><td>${trade.side === 'buy' ? '買進' : '賣出'}</td><td class="numeric amount">${number(trade.shares)} 股</td><td class="numeric amount">${unitMoney(trade.price)}</td><td class="numeric amount">${money(trade.fees)}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
+      return `<tr><td>${tradeDate}</td><td>${escapeHtml(trade.symbol)}${item ? ` ${escapeHtml(item.name)}` : ''}</td><td>${trade.side === 'buy' ? '買進' : '賣出'}</td><td class="numeric amount">${number(trade.shares)} 股</td><td class="numeric amount">${unitMoney(trade.price)}</td><td class="numeric amount">${money(Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0))}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
     }).join('');
     $('#tradesEmpty').hidden = ordered.length > 0;
     $('#tradesTable').hidden = ordered.length === 0;
@@ -391,8 +391,6 @@
     $('#buyHoldingId').value = item.id;
     $('#buySymbolLabel').textContent = `${item.symbol} ${item.name}`;
     $('#buyShares').value = '';
-    $('#buyPrice').value = '';
-    $('#buyFees').value = '0';
     $('#buyDate').value = taipeiDateString();
     $('#buyNotes').value = '';
     $('#buyDialog').showModal();
@@ -402,14 +400,14 @@
     const item = holdings.find((holding) => holding.id === $('#buyHoldingId').value);
     if (!item) return;
     const shares = Number($('#buyShares').value);
-    const price = Number($('#buyPrice').value);
-    const fees = Number($('#buyFees').value || 0);
-    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
-      showMessage('資料需確認', '買進股數與成交價必須大於 0，手續費不可小於 0。'); return;
+    const totalCost = Number($('#buyTotalCost').value);
+    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(totalCost) || totalCost <= 0) {
+      showMessage('資料需確認', '買進股數與本次總成本都必須大於 0。'); return;
     }
+    const allInUnitCost = totalCost / shares;
     const date = $('#buyDate').value;
     if (!date || Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())) { showMessage('資料需確認', '請選擇有效的成交日期。'); return; }
-    const trade = { symbol: item.symbol, side: 'buy', shares, price, fees, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
+    const trade = { symbol: item.symbol, side: 'buy', shares, price: allInUnitCost, fees: 0, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
     const button = $('#buySubmit'); button.disabled = true;
     try {
       const saved = await persistTrade(item, trade);
