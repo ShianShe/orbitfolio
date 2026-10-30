@@ -4,7 +4,7 @@
 
 ## 本機開啟
 
-直接以瀏覽器開啟 `index.html`。持股資料目前保存在目前瀏覽器的 `localStorage`，不會跨裝置同步，也不應將真實持股資料提交到 GitHub。
+直接以瀏覽器開啟 `index.html`。Supabase 尚未設定或登入時，網站使用目前瀏覽器的 `localStorage`；登入雲端帳號後則以 Supabase 作為跨裝置資料來源。
 
 ## GitHub Pages
 
@@ -14,9 +14,9 @@
 
 前端已支援 Supabase Email／密碼登入，以及登入後的持股、退出計畫雲端載入與持股 CRUD。資料表和每位使用者的 Row Level Security 政策位於 `supabase/schema.sql`。
 
-1. 在 Supabase 建立專案，於 SQL Editor 執行 `supabase/schema.sql`。
-2. Authentication → URL Configuration：將 Site URL 設為 `https://shianshe.github.io`，並將 `https://shianshe.github.io/orbitfolio/` 加到 Redirect URLs。
-3. 從 Project Settings → API 取得 Project URL 與 Publishable key（或舊版 anon public key），填入 `supabase-config.js`。
+1. 在 `orbitfolio` Supabase 專案的 SQL Editor 執行 `supabase/schema.sql`。
+2. Authentication → URL Configuration：將 Site URL 設為 `https://shianshe.github.io/orbitfolio/`，並將 `https://shianshe.github.io/orbitfolio/**` 加到 Redirect URLs。
+3. Project URL 與 Publishable key 已填在 `supabase-config.js`。這個 publishable key 是瀏覽器公開值；絕不可將 `service_role` key 放進前端。
 4. 將變更推送到 `main`，GitHub Actions 會重新部署。開啟網站後註冊並驗證 Email，再登入；首次登入會將此瀏覽器的持股匯入新帳戶，若該瀏覽器沒有持股則建立 00631L 預設資料。
 
 前端需要的 Publishable／anon key 是公開值，安全性由 RLS 政策提供。絕不可把 `service_role` key 放進前端或提交至 repository。當雲端已存在資料時，登入會以雲端資料為準，不會覆寫雲端資料。
