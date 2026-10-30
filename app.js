@@ -3,6 +3,13 @@
   const TRADES_KEY = 'orbitfolio.trades.v1';
   const PLANS_KEY = 'orbitfolio.exitPlans.v1';
   const DEFAULT_HOLDINGS = [{ id: 'holding-00631L', symbol: '00631L', name: '元大台灣50正2', type: 'ETF', shares: 1200, cost: 25.5, purchaseDate: '', notes: '', price: null, createdAt: new Date().toISOString() }];
+  const cloudConfig = window.ORBITFOLIO_SUPABASE || {};
+  const cloudConfigured = Boolean(cloudConfig.url && cloudConfig.publishableKey);
+  let cloudClient = null;
+  if (cloudConfigured && window.supabase?.createClient) {
+    cloudClient = window.supabase.createClient(cloudConfig.url, cloudConfig.publishableKey);
+  }
+  let currentUser = null;
   const $ = (selector) => document.querySelector(selector);
   const holdingsBody = $('#holdingsBody');
   const holdingDialog = $('#holdingDialog');
@@ -20,6 +27,68 @@
   function saveHoldings() { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(holdings)); }
   function saveTrades() { localStorage.setItem(TRADES_KEY, JSON.stringify(trades)); }
   function savePlans() { localStorage.setItem(PLANS_KEY, JSON.stringify(plans)); }
+  function isUuid(value) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '')); }
+  function fromHoldingRow(row) {
+    return { id: row.id, symbol: row.symbol, name: row.name, type: row.asset_type, shares: Number(row.shares), cost: Number(row.average_cost), purchaseDate: row.purchase_date || '', notes: row.notes || '', price: row.latest_price == null ? null : Number(row.latest_price), createdAt: row.created_at };
+  }
+  function toHoldingRow(item) {
+    return { user_id: currentUser.id, symbol: item.symbol, name: item.name, asset_type: item.type, shares: item.shares, average_cost: item.cost, purchase_date: item.purchaseDate || null, notes: item.notes || '', latest_price: item.price ?? null, updated_at: new Date().toISOString() };
+  }
+  async function persistHolding(item) {
+    if (!cloudClient) return item;
+    if (!currentUser) throw new Error('請先登入再儲存持股。');
+    const row = toHoldingRow(item);
+    const request = isUuid(item.id)
+      ? cloudClient.from('holdings').update(row).eq('id', item.id).select().single()
+      : cloudClient.from('holdings').insert(row).select().single();
+    const { data, error } = await request;
+    if (error) throw error;
+    return fromHoldingRow(data);
+  }
+  function rowToTrade(row) {
+    return { id: row.id, symbol: row.symbol, side: row.side, shares: Number(row.shares), price: Number(row.execution_price), tradedAt: row.traded_at, fees: Number(row.fees), notes: row.notes || '' };
+  }
+  async function loadCloudData(user) {
+    const [holdingResult, tradeResult, planResult] = await Promise.all([
+      cloudClient.from('holdings').select('*').order('symbol'),
+      cloudClient.from('trades').select('*').order('traded_at'),
+      cloudClient.from('exit_plans').select('*').order('symbol')
+    ]);
+    for (const result of [holdingResult, tradeResult, planResult]) if (result.error) throw result.error;
+    let cloudHoldings = holdingResult.data || [];
+    let cloudTrades = tradeResult.data || [];
+    let cloudPlans = planResult.data || [];
+    const isNewAccount = !cloudHoldings.length && !cloudTrades.length && !cloudPlans.length;
+    if (isNewAccount) {
+      const localHoldings = readJson(HOLDINGS_KEY, null);
+      const seed = Array.isArray(localHoldings) && localHoldings.length ? localHoldings : DEFAULT_HOLDINGS;
+      const { data, error } = await cloudClient.from('holdings').upsert(seed.map((item) => toHoldingRowForUser(item, user)), { onConflict: 'user_id,symbol' }).select();
+      if (error) throw error;
+      cloudHoldings = data || [];
+    }
+    const hasPlan = cloudPlans.some((plan) => plan.symbol === '00631L');
+    if (!hasPlan && (isNewAccount || cloudHoldings.some((item) => item.symbol === '00631L'))) {
+      const { data, error } = await cloudClient.from('exit_plans').upsert({ user_id: user.id, symbol: '00631L', initial_shares: 1200, batches: [400, 400, 400] }, { onConflict: 'user_id,symbol' }).select();
+      if (error) throw error;
+      cloudPlans = [...cloudPlans.filter((plan) => plan.symbol !== '00631L'), ...(data || [])];
+    }
+    holdings = cloudHoldings.map(fromHoldingRow);
+    trades = cloudTrades.map(rowToTrade);
+    plans = Object.fromEntries(cloudPlans.map((plan) => [plan.symbol, { totalShares: Number(plan.initial_shares), batches: Array.isArray(plan.batches) ? plan.batches.map(Number) : [400, 400, 400] }]));
+    if (!plans['00631L']) plans['00631L'] = { totalShares: 1200, batches: [400, 400, 400] };
+    saveHoldings(); saveTrades(); savePlans();
+    currentUser = user;
+    $('#accountEmail').textContent = user.email || '已登入';
+    $('#accountEmail').hidden = false; $('#signOut').hidden = false;
+    $('#syncTitle').textContent = '雲端同步中'; $('#syncDetail').textContent = '已同步至你的帳號';
+    $('#syncDot').classList.add('cloud-sync-dot');
+    $('#localModeNotice').hidden = true;
+    $('#authGate').hidden = true; $('#appShell').hidden = false;
+    render();
+  }
+  function toHoldingRowForUser(item, user) {
+    return { user_id: user.id, symbol: item.symbol, name: item.name, asset_type: item.type, shares: item.shares, average_cost: item.cost, purchase_date: item.purchaseDate || null, notes: item.notes || '', latest_price: item.price ?? null };
+  }
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char])); }
   function number(value) { return Number(value).toLocaleString('zh-TW', { maximumFractionDigits: 4 }); }
   function money(value) { return `NT$ ${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
@@ -124,17 +193,22 @@
     if (existing) { symbolError.textContent = '此代號已存在，請編輯既有持股。'; valid = false; }
     return valid;
   }
-  holdingForm.addEventListener('submit', (event) => {
+  holdingForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!validateForm()) return;
     const id = $('#holdingId').value;
     const previous = holdings.find((item) => item.id === id);
     const item = { id: id || `holding-${Date.now()}`, symbol: $('#symbol').value.trim().toUpperCase(), name: $('#name').value.trim(), type: $('#assetType').value, shares: Number($('#shares').value), cost: Number($('#cost').value), purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: previous?.price ?? null, createdAt: previous?.createdAt || new Date().toISOString() };
-    if (previous) {
-      if (previous.initialShares != null) item.initialShares = previous.initialShares;
-      holdings = holdings.map((row) => row.id === id ? item : row);
-    } else holdings.push(item);
-    saveHoldings(); holdingDialog.close(); render(); showToast(previous ? '持股資料已更新' : '持股已新增');
+    const saveButton = holdingForm.querySelector('[type="submit"]'); saveButton.disabled = true;
+    try {
+      const saved = await persistHolding(item);
+      if (previous) {
+        if (previous.initialShares != null) saved.initialShares = previous.initialShares;
+        holdings = holdings.map((row) => row.id === id ? saved : row);
+      } else holdings.push(saved);
+      saveHoldings(); holdingDialog.close(); render(); showToast(cloudClient ? '持股已儲存並同步' : previous ? '持股資料已更新' : '持股已新增');
+    } catch (error) { showMessage('儲存失敗', error.message || '請確認網路與雲端資料庫設定。'); }
+    finally { saveButton.disabled = false; }
   });
   $('#addHolding').addEventListener('click', () => openEditor());
   holdingsBody.addEventListener('click', (event) => {
@@ -143,10 +217,15 @@
     if (button.dataset.action === 'edit') openEditor(item);
     if (button.dataset.action === 'delete') { deleteTarget = item.id; $('#confirmDialog').showModal(); }
   });
-  $('#confirmDelete').addEventListener('click', () => {
+  $('#confirmDelete').addEventListener('click', async () => {
     const item = holdings.find((row) => row.id === deleteTarget);
     if (item && tradesFor(item.symbol).length) { $('#confirmDialog').close(); showMessage('無法刪除持股', '這筆持股已有交易紀錄。為保留交易歷史，請勿刪除；如需結清，請新增賣出交易。'); deleteTarget = null; return; }
-    holdings = holdings.filter((row) => row.id !== deleteTarget); saveHoldings(); $('#confirmDialog').close(); deleteTarget = null; render(); showToast('持股已刪除');
+    const button = $('#confirmDelete'); button.disabled = true;
+    try {
+      if (cloudClient && item) { const { error } = await cloudClient.from('holdings').delete().eq('id', item.id); if (error) throw error; }
+      holdings = holdings.filter((row) => row.id !== deleteTarget); saveHoldings(); $('#confirmDialog').close(); deleteTarget = null; render(); showToast('持股已刪除');
+    } catch (error) { $('#confirmDialog').close(); showMessage('刪除失敗', error.message || '請確認雲端連線後重試。'); }
+    finally { button.disabled = false; }
   });
   function showMessage(title, message) { $('#messageTitle').textContent = title; $('#messageText').textContent = message; $('#messageDialog').showModal(); }
   $('#searchInput').addEventListener('input', render);
@@ -189,15 +268,82 @@
       });
       const seen = new Set();
       imported.forEach((item) => { if (seen.has(item.symbol)) throw new Error(`CSV 中代號 ${item.symbol} 重複。`); seen.add(item.symbol); });
-      let added = 0; let updated = 0;
-      imported.forEach((incoming) => {
-        const existing = holdings.find((item) => item.symbol.toUpperCase() === incoming.symbol);
-        if (existing) { Object.assign(existing, incoming); updated++; }
-        else { holdings.push({ ...incoming, id: `holding-${Date.now()}-${added}`, price: null, createdAt: new Date().toISOString() }); added++; }
-      });
+      let added = 0; let updated = 0; const nextHoldings = [...holdings];
+      for (const incoming of imported) {
+        const existingIndex = nextHoldings.findIndex((item) => item.symbol.toUpperCase() === incoming.symbol);
+        const existing = existingIndex >= 0 ? nextHoldings[existingIndex] : null;
+        const candidate = { ...incoming, id: existing?.id || `holding-${Date.now()}-${added}`, price: existing?.price ?? null, createdAt: existing?.createdAt || new Date().toISOString() };
+        const saved = await persistHolding(candidate);
+        if (existingIndex >= 0) { nextHoldings[existingIndex] = saved; updated++; }
+        else { nextHoldings.push(saved); added++; }
+      }
+      holdings = nextHoldings;
       saveHoldings(); render(); showToast(`匯入完成：新增 ${added} 筆，更新 ${updated} 筆`);
     } catch (error) { showMessage('CSV 匯入失敗', error.message || '請檢查檔案格式。'); }
     event.target.value = '';
   });
-  setToday(); render();
+  let authMode = 'signin';
+  function setAuthMode(mode) {
+    authMode = mode;
+    const signup = mode === 'signup';
+    $('#authTitle').textContent = signup ? '建立 Orbitfolio 帳號' : '登入 Orbitfolio';
+    $('#authIntro').textContent = signup ? '建立帳號後，你可以在不同裝置登入並同步持股。' : '登入後即可在不同裝置查看與管理同一份持股資料。';
+    $('#authSubmit').textContent = signup ? '建立帳號' : '登入';
+    $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
+    $('#authToggle').textContent = signup ? '已經有帳號？返回登入' : '還沒有帳號？建立帳號';
+    $('#authFeedback').textContent = ''; $('#authFeedback').classList.remove('success');
+  }
+  function showAuthGate(message = '') {
+    currentUser = null; $('#appShell').hidden = true; $('#authGate').hidden = false;
+    $('#accountEmail').hidden = true; $('#signOut').hidden = true;
+    $('#authFeedback').textContent = message; $('#authFeedback').classList.remove('success');
+  }
+  async function activateUser(user) {
+    try { await loadCloudData(user); }
+    catch (error) { showAuthGate(`無法載入雲端資料：${error.message || '請確認 Supabase 資料表與 RLS 設定。'}`); }
+  }
+  $('#authToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
+  $('#authForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!cloudClient) return;
+    const email = $('#authEmail').value.trim(); const password = $('#authPassword').value;
+    const submit = $('#authSubmit'); const feedback = $('#authFeedback');
+    submit.disabled = true; feedback.textContent = '連線中…'; feedback.classList.remove('success');
+    try {
+      if (authMode === 'signup') {
+        const { data, error } = await cloudClient.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` } });
+        if (error) throw error;
+        if (data.session) await activateUser(data.session.user);
+        else { feedback.textContent = '帳號建立成功。請先到電子郵件點擊確認連結，再回來登入。'; feedback.classList.add('success'); }
+      } else {
+        const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        if (data.user) await activateUser(data.user);
+      }
+    } catch (error) { feedback.textContent = error.message || '登入失敗，請檢查電子郵件與密碼。'; }
+    finally { submit.disabled = false; }
+  });
+  $('#signOut').addEventListener('click', async () => {
+    if (!cloudClient) return;
+    const { error } = await cloudClient.auth.signOut();
+    if (error) showMessage('登出失敗', error.message);
+    else showAuthGate('已安全登出。');
+  });
+
+  setToday();
+  if (!cloudConfigured) {
+    $('#syncTitle').textContent = '尚未連接雲端';
+    $('#syncDetail').textContent = '資料保存在此瀏覽器';
+    $('#localModeNotice').hidden = false;
+    render();
+  } else if (!cloudClient) {
+    showAuthGate('無法載入 Supabase 用戶端。請確認網路連線，或重新部署網站。');
+  } else {
+    $('#localModeNotice').hidden = true; showAuthGate(); setAuthMode('signin');
+    cloudClient.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') showAuthGate(); });
+    cloudClient.auth.getSession().then(({ data, error }) => {
+      if (error) { showAuthGate(`登入狀態讀取失敗：${error.message}`); return; }
+      if (data.session?.user) activateUser(data.session.user);
+    }).catch((error) => showAuthGate(`連線失敗：${error.message || '請稍後重試。'}`));
+  }
 })();

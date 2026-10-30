@@ -11,7 +11,23 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="app-shell">
+  <section class="auth-gate" id="authGate" hidden>
+    <div class="auth-card">
+      <a class="brand auth-brand" href="#"><span class="brand-mark">O</span><span>orbit<span class="brand-light">folio</span></span></a>
+      <div class="eyebrow">YOUR PORTFOLIO, IN SYNC</div>
+      <h1 id="authTitle">登入 Orbitfolio</h1>
+      <p class="auth-intro" id="authIntro">登入後即可在不同裝置查看與管理同一份持股資料。</p>
+      <form id="authForm">
+        <label class="field"><span>電子郵件</span><input id="authEmail" type="email" required autocomplete="email" placeholder="name@example.com"></label>
+        <label class="field"><span>密碼</span><input id="authPassword" type="password" required minlength="8" autocomplete="current-password" placeholder="至少 8 個字元"></label>
+        <button type="submit" class="button primary auth-submit" id="authSubmit">登入</button>
+      </form>
+      <div class="auth-feedback" id="authFeedback" role="status"></div>
+      <button class="text-button auth-toggle" id="authToggle" type="button">還沒有帳號？建立帳號</button>
+      <div class="auth-footnote">你的持股資料會依登入帳號隔離保存。</div>
+    </div>
+  </section>
+  <div class="app-shell" id="appShell">
     <aside class="sidebar">
       <a class="brand" href="#" aria-label="持股管理首頁">
         <span class="brand-mark">O</span><span>orbit<span class="brand-light">folio</span></span>
@@ -23,7 +39,7 @@
         <a href="#exit-plan" class="nav-item"><span class="nav-icon">↗</span>退出計畫</a>
       </nav>
       <div class="sidebar-bottom">
-        <div class="sync-card"><span class="sync-dot"></span><div><strong>資料已儲存</strong><small>保存在此裝置</small></div></div>
+        <div class="sync-card"><span class="sync-dot" id="syncDot"></span><div><strong id="syncTitle">單一裝置模式</strong><small id="syncDetail">資料保存在此瀏覽器</small></div></div>
         <div class="profile"><div class="avatar">林</div><div><strong>我的投資組合</strong><small>個人帳戶</small></div><span class="more">···</span></div>
       </div>
     </aside>
@@ -31,13 +47,14 @@
     <main class="main-content" id="overview">
       <header class="topbar">
         <div class="breadcrumb">投資組合 <span>/</span> 我的持股</div>
-        <div class="top-actions"><span class="today-label" id="todayLabel"></span><button class="icon-button" aria-label="通知">♧<i></i></button><div class="avatar small">林</div></div>
+        <div class="top-actions"><span class="today-label" id="todayLabel"></span><button class="icon-button" aria-label="通知">♧<i></i></button><span class="account-email" id="accountEmail" hidden></span><button class="button subtle signout-button" id="signOut" hidden>登出</button><div class="avatar small">林</div></div>
       </header>
 
       <section class="page-heading">
         <div><div class="eyebrow">PORTFOLIO</div><h1>我的持股</h1><p>管理你的投資部位，掌握每一筆資產配置。</p></div>
         <button class="button primary" id="addHolding"><span class="plus">＋</span>新增持股</button>
       </section>
+      <div class="cloud-notice" id="localModeNotice"><span>ⓘ</span><p>目前是單一裝置模式。完成 Supabase 設定並登入後，持股才會跨裝置同步。</p></div>
 
       <section class="summary-grid" aria-label="投資總覽">
         <article class="summary-card total-card">
@@ -102,6 +119,8 @@
   <dialog id="messageDialog" class="modal confirm-modal"><div class="confirm-icon success">✓</div><h2 id="messageTitle">完成</h2><p id="messageText"></p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
   <dialog id="exitInfoDialog" class="modal confirm-modal"><div class="confirm-icon success">↗</div><h2>分三批退出</h2><p>00631L 初始持有 1,200 股，規劃分三批、每批 400 股。每批成交後應新增交易紀錄；成交紀錄是持股變動的依據。</p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
   <div class="toast" id="toast" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

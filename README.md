@@ -10,4 +10,15 @@
 
 此專案是靜態網頁，可透過 GitHub Actions 發布。先將 repository 的 **Settings → Pages → Build and deployment → Source** 設為 **GitHub Actions**，之後每次推送到 `main` 都會自動部署。
 
-目前尚未串接登入、雲端資料庫或行情來源。跨裝置登入同步需另行加入驗證與具備使用者資料隔離規則的資料庫。
+## 跨裝置登入與同步
+
+前端已支援 Supabase Email／密碼登入，以及登入後的持股、退出計畫雲端載入與持股 CRUD。資料表和每位使用者的 Row Level Security 政策位於 `supabase/schema.sql`。
+
+1. 在 Supabase 建立專案，於 SQL Editor 執行 `supabase/schema.sql`。
+2. Authentication → URL Configuration：將 Site URL 設為 `https://shianshe.github.io`，並將 `https://shianshe.github.io/orbitfolio/` 加到 Redirect URLs。
+3. 從 Project Settings → API 取得 Project URL 與 Publishable key（或舊版 anon public key），填入 `supabase-config.js`。
+4. 將變更推送到 `main`，GitHub Actions 會重新部署。開啟網站後註冊並驗證 Email，再登入；首次登入會將此瀏覽器的持股匯入新帳戶，若該瀏覽器沒有持股則建立 00631L 預設資料。
+
+前端需要的 Publishable／anon key 是公開值，安全性由 RLS 政策提供。絕不可把 `service_role` key 放進前端或提交至 repository。當雲端已存在資料時，登入會以雲端資料為準，不會覆寫雲端資料。
+
+目前尚未實作交易紀錄操作介面、行情來源或實際成交記帳；`trades` 資料表已建立，未來交易功能需新增不可覆寫的成交紀錄。
