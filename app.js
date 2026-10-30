@@ -273,7 +273,7 @@
       const price = hasPrice ? Number(item.price) : null;
       const market = hasPrice ? shares * price : null;
       const pnl = hasPrice ? market - totalCost : null;
-      const icon = escapeHtml(item.symbol.slice(0, 4));
+      const icon = escapeHtml(item.symbol);
       const itemTrades = tradesFor(item.symbol);
       const detailCount = itemTrades.length + (Number(item.initialShares ?? item.shares) > 0 ? 1 : 0);
       const detailsOpen = expandedTradeDetails.has(item.id);
