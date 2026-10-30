@@ -131,6 +131,10 @@
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char])); }
   function number(value) { return Number(value).toLocaleString('zh-TW', { maximumFractionDigits: 4 }); }
   function money(value) { return `NT$ ${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+  function wholeMoney(value) {
+    const truncated = Math.trunc(Number(value) || 0);
+    return `NT$ ${Number(Object.is(truncated, -0) ? 0 : truncated).toLocaleString('zh-TW')}`;
+  }
   function taipeiDateString(date = new Date()) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
   }
@@ -252,7 +256,7 @@
     const totalShares = baselineShares + boughtShares;
     return totalShares > 0 ? (baselineShares * baselineCost + buyCost) / totalShares : baselineCost;
   }
-  function unitMoney(value) { return `NT$ ${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`; }
+  function unitMoney(value) { return `NT$ ${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
   function getDisplayShares(item) {
     // A transaction ledger is the source of truth once transactions exist. Initial positions remain editable until then.
     const rows = tradesFor(item.symbol);
@@ -282,8 +286,8 @@
         <td><div class="asset-cell"><div class="ticker-icon ${item.type === 'ETF' ? 'etf' : 'stock'}">${icon}</div><div class="asset-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}${item.purchaseDate ? ` · ${escapeHtml(item.purchaseDate)}` : ''}</small></div></div></td>
         <td><span class="type-badge">${escapeHtml(item.type)}</span></td>
         <td class="numeric amount">${number(shares)}</td><td class="numeric amount">${unitMoney(cost)}</td><td class="numeric amount">${money(totalCost)}</td>
-        <td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? `${money(price)}<small class="quote-meta">${escapeHtml(quoteDescription(item))}</small>` : '尚無行情'}</td><td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? money(market) : '—'}</td>
-        <td class="numeric ${hasPrice ? (pnl >= 0 ? 'positive' : 'negative') : 'na'}">${hasPrice ? `${pnl >= 0 ? '+' : ''}${money(pnl)}<small class="return"> ${pnl >= 0 ? '+' : ''}${(pnl / totalCost * 100).toFixed(2)}%</small>` : '—'}</td>
+        <td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? `${money(price)}<small class="quote-meta">${escapeHtml(quoteDescription(item))}</small>` : '尚無行情'}</td><td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? wholeMoney(market) : '—'}</td>
+        <td class="numeric ${hasPrice ? (pnl >= 0 ? 'positive' : 'negative') : 'na'}">${hasPrice ? `${pnl >= 0 ? '+' : ''}${wholeMoney(pnl)}<small class="return"> ${pnl >= 0 ? '+' : ''}${(pnl / totalCost * 100).toFixed(2)}%</small>` : '—'}</td>
         <td><div class="row-actions"><button data-action="buy" data-id="${escapeHtml(item.id)}">新增買進</button><button data-action="details" data-id="${escapeHtml(item.id)}" aria-expanded="${detailsOpen}">交易明細${detailCount ? ` ${detailCount}` : ''}</button><button data-action="edit" data-id="${escapeHtml(item.id)}">編輯</button><button data-action="delete" data-id="${escapeHtml(item.id)}">刪除</button></div></td>
       </tr>${detailsOpen ? `<tr class="transaction-detail-row"><td colspan="10">${renderTradeDetails(item)}</td></tr>` : ''}`;
     }).join('');
@@ -298,9 +302,9 @@
     const marketValue = priced.reduce((sum, item) => sum + getDisplayShares(item) * Number(item.price), 0);
     const unrealized = marketValue - priced.reduce((sum, item) => sum + getDisplayShares(item) * getDisplayCost(item), 0);
     $('#totalCost').textContent = money(totalCost);
-    $('#marketValue').textContent = allPriced ? money(marketValue) : '尚無行情';
+    $('#marketValue').textContent = allPriced ? wholeMoney(marketValue) : '尚無行情';
     $('#marketNote').textContent = allPriced ? `${priced.length} 項資產已取得價格` : `${holdings.length - priced.length} 項資產尚無行情`;
-    $('#unrealized').textContent = allPriced ? `${unrealized >= 0 ? '+' : ''}${money(unrealized)}` : '尚無行情';
+    $('#unrealized').textContent = allPriced ? `${unrealized >= 0 ? '+' : ''}${wholeMoney(unrealized)}` : '尚無行情';
     $('#unrealized').className = `metric${allPriced && unrealized < 0 ? ' negative' : allPriced ? ' positive' : ''}`;
     const etfCost = holdings.filter((item) => item.type === 'ETF').reduce((sum, item) => sum + getDisplayShares(item) * getDisplayCost(item), 0);
     const stockCost = totalCost - etfCost;
@@ -335,7 +339,7 @@
     if (item) {
       $('#dialogTitle').textContent = '編輯持股'; $('#holdingId').value = item.id;
       $('#symbol').value = item.symbol; $('#name').value = item.name; $('#assetType').value = item.type;
-      $('#shares').value = getDisplayShares(item); $('#cost').value = getDisplayCost(item); $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
+      $('#shares').value = getDisplayShares(item); $('#cost').value = getDisplayCost(item).toFixed(2); $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
       if (tradesFor(item.symbol).length) { $('#shares').disabled = true; $('#cost').disabled = true; $('#costLockHint').hidden = false; } else $('#costLockHint').hidden = true;
       $('#quoteLookupStatus').textContent = item.price != null ? `最近收盤 ${money(item.price)} · ${quoteDescription(item)}` : '尚無行情，輸入代號後可查詢。';
     } else { $('#costLockHint').hidden = true; $('#shares').disabled = false; $('#quoteLookupStatus').textContent = '輸入代號後自動帶入名稱及最近收盤價。'; }
@@ -515,7 +519,7 @@
   }
   $('#exportCsv').addEventListener('click', () => {
     const headers = ['股票代號', '股票名稱', '資產類型', '持有股數', '平均成本', '買進日期', '備註'];
-    const rows = holdings.map((item) => [item.symbol, item.name, item.type, getDisplayShares(item), getDisplayCost(item), item.purchaseDate, item.notes]);
+    const rows = holdings.map((item) => [item.symbol, item.name, item.type, getDisplayShares(item), Number(getDisplayCost(item).toFixed(2)), item.purchaseDate, item.notes]);
     const csv = '\ufeff' + [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a'); link.href = url; link.download = `持股清單-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url); showToast('CSV 已匯出');
