@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=edit-single-trade">
+  <link rel="stylesheet" href="styles.css?v=transactions-are-source">
 </head>
 <body>
   <section class="auth-gate" id="authGate" hidden>
@@ -125,8 +125,8 @@
         <label class="field"><span>股票名稱 <b>*</b></span><input id="name" required maxlength="60" placeholder="輸入資產名稱"><small class="field-error" data-error="name"></small></label><div class="quote-lookup" id="quoteLookupStatus" role="status" aria-live="polite">輸入代號後自動帶入名稱及最近收盤價。</div>
         <label class="field"><span>資產類型 <b>*</b></span><select id="assetType" required><option value="ETF">ETF</option><option value="個股">個股</option></select></label>
         <label class="field"><span>持有股數 <b>*</b></span><input id="shares" type="number" min="0.0001" step="any" required placeholder="0"></label>
-        <label class="field"><span>平均成本 <b>*</b></span><div class="input-prefix"><span>$</span><input id="cost" type="number" min="0.0001" step="any" required placeholder="0.00"></div><small class="field-hint" id="costLockHint" hidden>已有成交紀錄；均價由持股基礎與買進紀錄計算。請新增買進，不要覆寫歷史。</small><small class="field-hint" id="initialFeeHint">若下方填入手續費，會自動攤入平均成本。</small></label>
-        <label class="field" id="initialFeeField"><span>初始買進手續費 <small>選填</small></span><div class="input-prefix"><span>$</span><input id="initialFees" type="number" min="0" step="0.01" value="0" placeholder="0"></div></label>
+        <label class="field"><span id="costFieldLabel">買進單價</span><div class="input-prefix"><span>$</span><input id="cost" type="number" min="0.0001" step="any" required placeholder="0.00"></div><small class="field-hint" id="costLockHint" hidden>股數與均價由每筆成交紀錄自動加總，請在交易明細修改單筆。</small><small class="field-hint" id="initialFeeHint">此筆買進手續費可選填，並會納入加權均價。</small></label>
+        <label class="field" id="initialFeeField"><span>手續費 <small>選填</small></span><div class="input-prefix"><span>$</span><input id="initialFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
         <label class="field"><span>買進日期 <small>選填</small></span><input id="purchaseDate" type="date"></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="notes" rows="3" maxlength="500" placeholder="新增備註"></textarea></label>
       </div>
@@ -142,7 +142,7 @@
       <div class="form-grid">
         <label class="field"><span>買進股數 <b>*</b></span><input id="buyShares" type="number" min="0.0001" step="0.0001" required placeholder="例如 10"></label>
         <label class="field"><span>買進單價 <b>*</b></span><div class="input-prefix"><span>$</span><input id="buyPrice" type="number" min="0.0001" step="any" required placeholder="券商成交單價"></div></label>
-        <label class="field"><span>手續費 <small>選填，依券商實際金額</small></span><div class="input-prefix"><span>$</span><input id="buyFees" type="number" min="0" step="0.01" value="0" placeholder="0"></div></label>
+        <label class="field"><span>手續費 <small>選填，依券商實際金額</small></span><div class="input-prefix"><span>$</span><input id="buyFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
         <div class="field"><span>本次總成本（自動計算）</span><div class="purchase-total-preview" id="buyTotalPreview">$0.00</div></div>
         <label class="field"><span>成交日期 <b>*</b></span><input id="buyDate" type="date" required></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="buyNotes" rows="2" maxlength="500" placeholder="例如：盤中零股買進"></textarea></label>
@@ -159,7 +159,7 @@
       <div class="form-grid">
         <label class="field"><span>成交股數 <b>*</b></span><input id="tradeEditShares" type="number" min="0.0001" step="0.0001" required></label>
         <label class="field"><span>成交單價 <b>*</b></span><div class="input-prefix"><span>$</span><input id="tradeEditPrice" type="number" min="0.0001" step="any" required></div></label>
-        <label class="field"><span>手續費</span><div class="input-prefix"><span>$</span><input id="tradeEditFees" type="number" min="0" step="0.01" required></div></label>
+        <label class="field"><span>手續費 <small>選填</small></span><div class="input-prefix"><span>$</span><input id="tradeEditFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
         <label class="field"><span>成交日期 <b>*</b></span><input id="tradeEditDate" type="date" required></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="tradeEditNotes" rows="2" maxlength="500"></textarea></label>
       </div>
@@ -174,6 +174,6 @@
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
-  <script src="app.js?v=hide-fee-hint-on-edit"></script>
+  <script src="app.js?v=transactions-are-source"></script>
 </body>
 </html>

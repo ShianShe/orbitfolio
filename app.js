@@ -1,6 +1,8 @@
 (() => {
   const HOLDINGS_KEY = 'orbitfolio.holdings.v1';
   const TRADES_KEY = 'orbitfolio.trades.v1';
+  const LEGACY_POSITION_MARKER = '[orbitfolio:position-migrated-to-trade-v1]';
+  const UNKNOWN_FEE_MARKER = '[orbitfolio:fee-not-recorded-v1]';
   const PLANS_KEY = 'orbitfolio.exitPlans.v1';
   const FINMIND_API = 'https://api.finmindtrade.com/api/v4/data';
   const QUOTE_SOURCE = 'FinMind';
@@ -21,7 +23,6 @@
   let trades = readJson(TRADES_KEY, []);
   let plans = readJson(PLANS_KEY, null);
   let deleteTarget = null;
-  let editOpeningPosition = false;
   let quoteLookupSequence = 0;
   let quoteRefreshInFlight = false;
   let symbolLookupPromise = Promise.resolve();
@@ -30,6 +31,7 @@
   const expandedTradeDetails = new Set();
   if (!Array.isArray(holdings)) { holdings = DEFAULT_HOLDINGS; saveHoldings(); }
   if (!Array.isArray(trades)) { trades = []; saveTrades(); }
+  migrateLegacyPositionsLocally();
   if (!plans || !plans['00631L']) { plans = { ...(plans || {}), '00631L': { totalShares: 1200, batches: [400, 400, 400] } }; savePlans(); }
 
   function readJson(key, fallback) { try { const value = localStorage.getItem(key); return value === null ? fallback : JSON.parse(value); } catch { return fallback; } }
@@ -68,7 +70,31 @@
     return fromHoldingRow(data);
   }
   function rowToTrade(row) {
-    return { id: row.id, symbol: row.symbol, side: row.side, shares: Number(row.shares), price: Number(row.execution_price), tradedAt: row.traded_at, fees: Number(row.fees), notes: row.notes || '' };
+    const notes = row.notes || '';
+    const migrated = notes.includes(LEGACY_POSITION_MARKER);
+    const feesUnknown = notes.includes(UNKNOWN_FEE_MARKER);
+    return { id: row.id, symbol: row.symbol, side: row.side, shares: Number(row.shares), price: Number(row.execution_price), tradedAt: row.traded_at, fees: feesUnknown ? null : Number(row.fees), feesUnknown, notes: notes.replace(LEGACY_POSITION_MARKER, '').replace(UNKNOWN_FEE_MARKER, '').trim(), isMigratedPosition: migrated };
+  }
+  function tradeNotesForStorage(trade) {
+    const notes = String(trade.notes || '').trim();
+    return [notes, trade.isMigratedPosition ? LEGACY_POSITION_MARKER : '', trade.feesUnknown ? UNKNOWN_FEE_MARKER : ''].filter(Boolean).join('\n');
+  }
+  function migrateLegacyPositionsLocally() {
+    let changed = false;
+    let holdingsChanged = false;
+    for (const item of holdings) {
+      if (trades.some((trade) => trade.symbol === item.symbol && trade.isMigratedPosition)) continue;
+      const shares = Number(item.initialShares ?? item.shares) || 0;
+      const price = Number(item.cost) || 0;
+      if (shares <= 0 || price <= 0) continue;
+      const date = item.purchaseDate || taipeiDateString(new Date(item.createdAt || Date.now()));
+      const notes = item.purchaseDate ? '由舊持股資料轉入，請核對成交股數與單價' : '舊持股未記錄買進日期，請核對成交日期、股數與單價';
+      trades.push({ id: `trade-migrated-${item.id}`, symbol: item.symbol, side: 'buy', shares, price, fees: null, feesUnknown: true, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes, isMigratedPosition: true });
+      changed = true;
+    }
+    if (changed) saveTrades();
+    for (const item of holdings) if (Object.hasOwn(item, 'initialShares')) { delete item.initialShares; holdingsChanged = true; }
+    if (holdingsChanged) saveHoldings();
   }
   async function persistTrade(item, trade) {
     if (!cloudClient) return { ...trade, id: trade.id || `trade-${Date.now()}`, holdingId: item.id };
@@ -81,8 +107,8 @@
       shares: trade.shares,
       execution_price: trade.price,
       traded_at: trade.tradedAt,
-      fees: trade.fees,
-      notes: trade.notes
+      fees: Number(trade.fees || 0),
+      notes: tradeNotesForStorage(trade)
     }).select().single();
     if (error) throw error;
     return rowToTrade(data);
@@ -95,8 +121,8 @@
       shares: trade.shares,
       execution_price: trade.price,
       traded_at: trade.tradedAt,
-      fees: trade.fees,
-      notes: trade.notes
+      fees: Number(trade.fees || 0),
+      notes: tradeNotesForStorage(trade)
     }).eq('id', trade.id).eq('user_id', currentUser.id).select().single();
     if (error) throw error;
     return rowToTrade(data);
@@ -112,9 +138,12 @@
     let cloudTrades = tradeResult.data || [];
     let cloudPlans = planResult.data || [];
     const isNewAccount = !cloudHoldings.length && !cloudTrades.length && !cloudPlans.length;
+    let localTradesToImport = [];
     if (isNewAccount) {
       const localHoldings = readJson(HOLDINGS_KEY, null);
       const seed = Array.isArray(localHoldings) && localHoldings.length ? localHoldings : DEFAULT_HOLDINGS;
+      localTradesToImport = readJson(TRADES_KEY, []);
+      if (!Array.isArray(localTradesToImport)) localTradesToImport = [];
       const { data, error } = await cloudClient.from('holdings').upsert(seed.map((item) => toHoldingRowForUser(item, user)), { onConflict: 'user_id,symbol' }).select();
       if (error) throw error;
       cloudHoldings = data || [];
@@ -127,10 +156,26 @@
     }
     holdings = cloudHoldings.map(fromHoldingRow);
     trades = cloudTrades.map(rowToTrade);
+    currentUser = user;
+    if (isNewAccount) {
+      for (const localTrade of localTradesToImport) {
+        const holding = holdings.find((item) => item.symbol === localTrade.symbol);
+        if (holding) trades.push(await persistTrade(holding, localTrade));
+      }
+    }
+    for (const item of holdings) {
+      if (trades.some((trade) => trade.symbol === item.symbol && trade.isMigratedPosition)) continue;
+      const shares = Number(item.shares) || 0;
+      const price = Number(item.cost) || 0;
+      if (shares <= 0 || price <= 0) continue;
+      const date = item.purchaseDate || taipeiDateString(new Date(item.createdAt || Date.now()));
+      const notes = item.purchaseDate ? '由舊持股資料轉入，請核對成交股數與單價' : '舊持股未記錄買進日期，請核對成交日期、股數與單價';
+      const migrated = await persistTrade(item, { symbol: item.symbol, side: 'buy', shares, price, fees: null, feesUnknown: true, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes, isMigratedPosition: true });
+      trades.push(migrated);
+    }
     plans = Object.fromEntries(cloudPlans.map((plan) => [plan.symbol, { totalShares: Number(plan.initial_shares), batches: Array.isArray(plan.batches) ? plan.batches.map(Number) : [400, 400, 400] }]));
     if (!plans['00631L']) plans['00631L'] = { totalShares: 1200, batches: [400, 400, 400] };
     saveHoldings(); saveTrades(); savePlans();
-    currentUser = user;
     $('#accountEmail').textContent = user.email || '已登入';
     $('#accountEmail').hidden = false; $('#signOut').hidden = false;
     $('#syncTitle').textContent = '雲端同步中'; $('#syncDetail').textContent = '已同步至你的帳號';
@@ -250,38 +295,31 @@
   window.addEventListener('hashchange', showCurrentPage);
   function tradesFor(symbol) { return trades.filter((trade) => trade.symbol === symbol); }
   function renderTradeDetails(item) {
-    const baselineShares = Number(item.initialShares ?? item.shares) || 0;
-    const openingPosition = baselineShares > 0 ? [{ side: 'opening', shares: baselineShares, price: Number(item.cost) || 0, fees: null, tradedAt: item.purchaseDate ? `${item.purchaseDate}T12:00:00+08:00` : '', notes: '' }] : [];
-    const rows = [...openingPosition, ...tradesFor(item.symbol)].sort((a, b) => String(b.tradedAt).localeCompare(String(a.tradedAt)));
-    if (!rows.length) return '<div class="transaction-empty">這檔持股目前沒有持倉基礎或成交紀錄。</div>';
+    const rows = [...tradesFor(item.symbol)].sort((a, b) => String(b.tradedAt).localeCompare(String(a.tradedAt)));
+    if (!rows.length) return '<div class="transaction-empty">這檔持股目前沒有成交紀錄。</div>';
     const details = rows.map((trade) => {
       const date = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
       const totalCost = Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0);
-      const editButton = trade.id
-        ? `<button class="trade-edit-button" type="button" data-action="edit-trade" data-id="${escapeHtml(trade.id)}">修改</button>`
-        : trade.side === 'opening' ? `<button class="trade-edit-button" type="button" data-action="edit-opening" data-id="${escapeHtml(item.id)}">修改</button>` : '—';
-      return `<tr><td>${date}</td><td>${trade.side === 'sell' ? '賣出' : '買進'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${trade.fees == null ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td><td>${editButton}</td></tr>`;
+      const editButton = `<button class="trade-edit-button" type="button" data-action="edit-trade" data-id="${escapeHtml(trade.id)}">修改</button>`;
+      return `<tr><td>${date}</td><td>${trade.side === 'sell' ? '賣出' : '買進'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${trade.feesUnknown ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td><td>${editButton}</td></tr>`;
     }).join('');
     return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">成交單價</th><th class="numeric">手續費</th><th class="numeric">本次總成本</th><th>備註</th><th>操作</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
   }
   function soldShares(symbol) { return tradesFor(symbol).filter((trade) => trade.side === 'sell').reduce((sum, trade) => sum + Number(trade.shares || 0), 0); }
   function getDisplayCost(item) {
-    const baselineShares = Number(item.initialShares ?? item.shares) || 0;
-    const baselineCost = Number(item.cost) || 0;
-    const buys = tradesFor(item.symbol).filter((trade) => trade.side === 'buy');
+    const rows = tradesFor(item.symbol);
+    if (!rows.length) return Number(item.cost) || 0;
+    const buys = rows.filter((trade) => trade.side === 'buy');
     const boughtShares = buys.reduce((sum, trade) => sum + Number(trade.shares || 0), 0);
     const buyCost = buys.reduce((sum, trade) => sum + Number(trade.shares || 0) * Number(trade.price || 0) + Number(trade.fees || 0), 0);
-    const totalShares = baselineShares + boughtShares;
-    return totalShares > 0 ? (baselineShares * baselineCost + buyCost) / totalShares : baselineCost;
+    return boughtShares > 0 ? buyCost / boughtShares : Number(item.cost) || 0;
   }
   function unitMoney(value) { return `$${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
   function getDisplayShares(item) {
-    // A transaction ledger is the source of truth once transactions exist. Initial positions remain editable until then.
     const rows = tradesFor(item.symbol);
     if (!rows.length) return Number(item.shares) || 0;
     const buys = rows.filter((trade) => trade.side === 'buy').reduce((sum, trade) => sum + Number(trade.shares || 0), 0);
-    const initial = item.initialShares ?? item.shares;
-    return Math.max(0, Number(initial) + buys - soldShares(item.symbol));
+    return Math.max(0, buys - soldShares(item.symbol));
   }
   function render() {
     const query = $('#searchInput').value.trim().toLocaleLowerCase();
@@ -297,7 +335,7 @@
       const pnl = hasPrice ? market - totalCost : null;
       const icon = escapeHtml(item.symbol);
       const itemTrades = tradesFor(item.symbol);
-      const detailCount = itemTrades.length + (Number(item.initialShares ?? item.shares) > 0 ? 1 : 0);
+      const detailCount = itemTrades.length;
       const detailsOpen = expandedTradeDetails.has(item.id);
       return `<tr class="holding-summary-row" data-holding-id="${escapeHtml(item.id)}" tabindex="0" aria-expanded="${detailsOpen}" aria-label="${escapeHtml(item.symbol)} 持股摘要，按 Enter 展開或收合交易明細">
         <td class="check-cell"><input type="checkbox" aria-label="選取 ${escapeHtml(item.symbol)}" disabled></td>
@@ -333,7 +371,6 @@
   }
   function renderPlan() {
     const plan = plans['00631L'];
-    const position = holdings.find((item) => item.symbol.toUpperCase() === '00631L');
     const totalSold = soldShares('00631L');
     const initial = plan.totalShares || 1200;
     const progress = Math.min(100, totalSold / initial * 100);
@@ -345,24 +382,23 @@
       const complete = executed >= shares;
       return `<article class="batch-card"><div class="batch-top"><strong>第 ${index + 1} 批</strong><span class="batch-label">${complete ? '已完成' : '待執行'}</span></div><small><b>${number(shares)}</b> 股${executed ? ` · 已成交 ${number(executed)} 股` : ''}</small></article>`;
     }).join('');
-    if (position && position.initialShares == null && Number(position.shares) !== initial) { position.initialShares = Number(position.shares); saveHoldings(); }
   }
   function resetForm() {
     holdingForm.reset(); $('#holdingId').value = ''; $('#dialogTitle').textContent = '新增持股'; delete $('#name').dataset.autoSymbol; $('#shares').disabled = false; $('#cost').disabled = false; symbolLookupPromise = Promise.resolve();
     document.querySelectorAll('.field-error').forEach((el) => el.textContent = '');
   }
-  function openEditor(item = null, editOpening = false) {
+  function openEditor(item = null) {
     resetForm();
-    editOpeningPosition = Boolean(item && editOpening);
-    $('#initialFees').value = '0'; $('#initialFeeField').hidden = Boolean(item);
+    $('#initialFees').value = ''; $('#initialFeeField').hidden = Boolean(item);
+    if (!item) $('#purchaseDate').value = taipeiDateString();
     $('#initialFeeHint').hidden = Boolean(item);
+    $('#costFieldLabel').textContent = item ? '平均成本' : '買進單價';
     if (item) {
       $('#dialogTitle').textContent = '編輯持股'; $('#holdingId').value = item.id;
       $('#symbol').value = item.symbol; $('#name').value = item.name; $('#assetType').value = item.type;
-      $('#shares').value = editOpeningPosition ? Number(item.initialShares ?? item.shares) : getDisplayShares(item);
-      $('#cost').value = (editOpeningPosition ? Number(item.cost) : getDisplayCost(item)).toFixed(2); $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
-      if (tradesFor(item.symbol).length && !editOpeningPosition) { $('#shares').disabled = true; $('#cost').disabled = true; $('#costLockHint').textContent = '已有成交紀錄；均價由持股基礎與買進紀錄計算。請新增買進，不要覆寫歷史。'; $('#costLockHint').hidden = false; }
-      else if (editOpeningPosition) { $('#costLockHint').textContent = '此處只修改既有持倉基礎，其他逐筆成交紀錄不會變動。'; $('#costLockHint').hidden = false; }
+      $('#shares').value = getDisplayShares(item);
+      $('#cost').value = getDisplayCost(item).toFixed(2); $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
+      if (tradesFor(item.symbol).length) { $('#shares').disabled = true; $('#cost').disabled = true; $('#costLockHint').textContent = '股數與均價由每筆成交紀錄自動加總，請在交易明細修改單筆。'; $('#costLockHint').hidden = false; }
       else $('#costLockHint').hidden = true;
       $('#quoteLookupStatus').textContent = item.price != null ? `最近收盤 ${money(item.price)} · ${quoteDescription(item)}` : '尚無行情，輸入代號後可查詢。';
     } else { $('#costLockHint').hidden = true; $('#shares').disabled = false; $('#quoteLookupStatus').textContent = '輸入代號後自動帶入名稱及最近收盤價。'; }
@@ -428,16 +464,20 @@
     const inputShares = Number($('#shares').value);
     const inputCost = Number($('#cost').value);
     const initialFees = previous ? 0 : Number($('#initialFees').value || 0);
-    const keepExistingBasis = previous && tradesFor(previous.symbol).length && !editOpeningPosition;
-    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: keepExistingBasis ? previous.shares : inputShares, cost: keepExistingBasis ? previous.cost : editOpeningPosition ? inputCost : (inputCost * inputShares + initialFees) / inputShares, purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
+    const positionDate = $('#purchaseDate').value || (!previous ? taipeiDateString() : '');
+    const hasLedger = previous && tradesFor(previous.symbol).length > 0;
+    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: hasLedger ? previous.shares : inputShares, cost: hasLedger ? previous.cost : inputCost, purchaseDate: positionDate, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
     const saveButton = holdingForm.querySelector('[type="submit"]'); saveButton.disabled = true;
     try {
       const saved = await persistHolding(item);
       if (previous) {
-        if (previous.initialShares != null) saved.initialShares = editOpeningPosition ? inputShares : previous.initialShares;
         holdings = holdings.map((row) => row.id === id ? saved : row);
-      } else holdings.push(saved);
-      saveHoldings(); holdingDialog.close(); render(); showToast(cloudClient ? '持股已儲存並同步' : previous ? '持股資料已更新' : '持股已新增');
+      } else {
+        const feesUnknown = $('#initialFees').value.trim() === '';
+        const firstTrade = await persistTrade(saved, { symbol: saved.symbol, side: 'buy', shares: inputShares, price: inputCost, fees: feesUnknown ? null : initialFees, feesUnknown, isMigratedPosition: true, tradedAt: new Date(`${positionDate}T12:00:00+08:00`).toISOString(), notes: '' });
+        holdings.push(saved); trades.push(firstTrade); saveTrades();
+      }
+      saveHoldings(); holdingDialog.close(); render(); showToast(cloudClient ? '持股與首筆買進紀錄已同步' : previous ? '持股資料已更新' : '持股與首筆買進紀錄已新增');
     } catch (error) { showMessage('儲存失敗', error.message || '請確認網路與雲端資料庫設定。'); }
     finally { saveButton.disabled = false; }
   });
@@ -448,7 +488,7 @@
     $('#buySymbolLabel').textContent = `${item.symbol} ${item.name}`;
     $('#buyShares').value = '';
     $('#buyPrice').value = '';
-    $('#buyFees').value = '0';
+    $('#buyFees').value = '';
     $('#buyDate').value = taipeiDateString();
     $('#buyNotes').value = '';
     updateBuyTotalPreview();
@@ -468,20 +508,21 @@
     if (!item) return;
     const shares = Number($('#buyShares').value);
     const price = Number($('#buyPrice').value);
+    const feesUnknown = $('#buyFees').value.trim() === '';
     const fees = Number($('#buyFees').value || 0);
     if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
       showMessage('資料需確認', '股數與成交單價必須大於 0，手續費不可小於 0。'); return;
     }
     const date = $('#buyDate').value;
     if (!date || Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())) { showMessage('資料需確認', '請選擇有效的成交日期。'); return; }
-    const trade = { symbol: item.symbol, side: 'buy', shares, price, fees, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
+    const trade = { symbol: item.symbol, side: 'buy', shares, price, fees: feesUnknown ? null : fees, feesUnknown, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
     const keepAdding = event.submitter?.id === 'buySaveContinue';
     const buttons = [$('#buySubmit'), $('#buySaveContinue')]; buttons.forEach((button) => { button.disabled = true; });
     try {
       const saved = await persistTrade(item, trade);
       trades.push(saved); saveTrades(); expandedTradeDetails.add(item.id); render();
       if (keepAdding) {
-        $('#buyShares').value = ''; $('#buyPrice').value = ''; $('#buyFees').value = '0'; $('#buyNotes').value = '';
+        $('#buyShares').value = ''; $('#buyPrice').value = ''; $('#buyFees').value = ''; $('#buyNotes').value = '';
         updateBuyTotalPreview(); $('#buyShares').focus();
         showToast(`本筆已儲存；目前持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
       } else {
@@ -510,7 +551,7 @@
     $('#tradeEditSymbol').textContent = `${holding.symbol} ${holding.name} · ${trade.side === 'buy' ? '買進' : '賣出'}`;
     $('#tradeEditShares').value = trade.shares;
     $('#tradeEditPrice').value = trade.price;
-    $('#tradeEditFees').value = trade.fees ?? 0;
+    $('#tradeEditFees').value = trade.feesUnknown ? '' : trade.fees ?? 0;
     $('#tradeEditDate').value = taipeiDateString(new Date(trade.tradedAt));
     $('#tradeEditNotes').value = trade.notes || '';
     $('#tradeEditDialog').showModal();
@@ -521,14 +562,16 @@
     if (index < 0) return;
     const shares = Number($('#tradeEditShares').value);
     const price = Number($('#tradeEditPrice').value);
-    const fees = Number($('#tradeEditFees').value);
+    const feeInput = $('#tradeEditFees').value.trim();
+    const feesUnknown = feeInput === '' && Boolean(trades[index].feesUnknown);
+    const fees = feeInput === '' ? 0 : Number(feeInput);
     const date = $('#tradeEditDate').value;
     if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
       showMessage('資料需確認', '成交股數與單價必須大於 0，手續費不可小於 0。'); return;
     }
     if (!date || Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())) { showMessage('資料需確認', '請選擇有效的成交日期。'); return; }
     const oldTrade = trades[index];
-    const editedTrade = { ...oldTrade, shares, price, fees, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#tradeEditNotes').value.trim() };
+    const editedTrade = { ...oldTrade, shares, price, fees, feesUnknown, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#tradeEditNotes').value.trim() };
     const button = $('#tradeEditSubmit'); button.disabled = true;
     try {
       const saved = await updateTradeRecord(editedTrade);
@@ -555,7 +598,6 @@
     }
     const item = holdings.find((row) => row.id === button.dataset.id); if (!item) return;
     if (button.dataset.action === 'details') { toggleTradeDetails(item); return; }
-    if (button.dataset.action === 'edit-opening') { openEditor(item, true); return; }
     if (button.dataset.action === 'buy') openBuyDialog(item);
     if (button.dataset.action === 'edit') openEditor(item);
     if (button.dataset.action === 'delete') { deleteTarget = item.id; $('#confirmDialog').showModal(); }
@@ -623,12 +665,17 @@
         const hasLedger = Boolean(existing && tradesFor(existing.symbol).length);
         const candidate = { ...incoming, ...(hasLedger ? { shares: existing.shares, cost: existing.cost } : {}), id: existing?.id || `holding-${Date.now()}-${added}`, price: existing?.price ?? null, createdAt: existing?.createdAt || new Date().toISOString() };
         const saved = await persistHolding(candidate);
-        if (existing?.initialShares != null) saved.initialShares = existing.initialShares;
+        if (!hasLedger) {
+          const date = incoming.purchaseDate || taipeiDateString();
+          const notes = incoming.purchaseDate ? '由 CSV 持股資料轉入，請核對此筆成交內容' : 'CSV 未提供買進日期，請核對成交日期與內容';
+          const firstTrade = await persistTrade(saved, { symbol: saved.symbol, side: 'buy', shares: incoming.shares, price: incoming.cost, fees: null, feesUnknown: true, isMigratedPosition: true, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes });
+          trades.push(firstTrade);
+        }
         if (existingIndex >= 0) { nextHoldings[existingIndex] = saved; updated++; if (hasLedger) ledgerProtected++; }
         else { nextHoldings.push(saved); added++; }
       }
       holdings = nextHoldings;
-      saveHoldings(); render(); showToast(`匯入完成：新增 ${added} 筆，更新 ${updated} 筆${ledgerProtected ? `；${ledgerProtected} 筆含成交紀錄，股數與均價依紀錄保留` : ''}`);
+      saveHoldings(); saveTrades(); render(); showToast(`匯入完成：新增 ${added} 筆，更新 ${updated} 筆${ledgerProtected ? `；${ledgerProtected} 筆含成交紀錄，股數與均價依紀錄保留` : ''}`);
     } catch (error) { showMessage('CSV 匯入失敗', error.message || '請檢查檔案格式。'); }
     event.target.value = '';
   });
