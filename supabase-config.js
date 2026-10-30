@@ -2,5 +2,5 @@
 // Protect every exposed table with Row Level Security. Never place a service_role key here.
 window.ORBITFOLIO_SUPABASE = {
   url: 'https://ofasuvgxbnikdafwmqvk.supabase.co',
-  publishableKey: 'sb_publishable_ZyetZ5FaRcU9QJhtqsrUng_F0fj3Nl1'
+  publishableKey: 'sb_publishable_Zyetz5FaRcU9QJhtqsrUng_F0fj3Nl1'
 };
