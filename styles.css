@@ -13,3 +13,4 @@
 @media(max-width:760px){.sidebar{height:auto;min-height:0;display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 16px}.brand{align-self:flex-start}.workspace-label,.sidebar-bottom{display:none}.main-nav{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px}.nav-item{flex:0 0 auto;padding:8px 10px;font-size:11px}.nav-icon{width:auto}.plan-details-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.transaction-detail{padding:12px}.page-view{min-height:60vh}}
 
 .purchase-total-preview{min-height:37px;padding:10px 11px;border:1px solid #e4e8e2;border-radius:6px;background:#f7f8f6;color:#286344;font-size:13px;font-weight:700}.modal-actions #buySaveContinue{white-space:nowrap}@media(max-width:520px){#buyForm .modal-actions{flex-wrap:wrap}#buyForm .modal-actions button{flex:1 1 auto}}
+.holding-summary-row{cursor:pointer}.holding-summary-row:hover{background:#f8faf8}.holding-summary-row:focus-visible{outline:2px solid #79a487;outline-offset:-2px}

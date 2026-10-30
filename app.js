@@ -277,7 +277,7 @@
       const itemTrades = tradesFor(item.symbol);
       const detailCount = itemTrades.length + (Number(item.initialShares ?? item.shares) > 0 ? 1 : 0);
       const detailsOpen = expandedTradeDetails.has(item.id);
-      return `<tr>
+      return `<tr class="holding-summary-row" data-holding-id="${escapeHtml(item.id)}" tabindex="0" aria-expanded="${detailsOpen}" aria-label="${escapeHtml(item.symbol)} 持股摘要，按 Enter 展開或收合交易明細">
         <td class="check-cell"><input type="checkbox" aria-label="選取 ${escapeHtml(item.symbol)}" disabled></td>
         <td><div class="asset-cell"><div class="ticker-icon ${item.type === 'ETF' ? 'etf' : 'stock'}">${icon}</div><div class="asset-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}${item.purchaseDate ? ` · ${escapeHtml(item.purchaseDate)}` : ''}</small></div></div></td>
         <td><span class="type-badge">${escapeHtml(item.type)}</span></td>
@@ -463,10 +463,28 @@
     } catch (error) { showMessage('買進紀錄儲存失敗', error.message || '請確認雲端連線後重試。'); }
     finally { buttons.forEach((button) => { button.disabled = false; }); }
   });
+  function toggleTradeDetails(item) {
+    if (expandedTradeDetails.has(item.id)) expandedTradeDetails.delete(item.id);
+    else expandedTradeDetails.add(item.id);
+    render();
+  }
+  holdingsBody.addEventListener('click', (event) => {
+    if (event.target.closest('button, input, a, select, textarea')) return;
+    const row = event.target.closest('tr.holding-summary-row');
+    if (!row) return;
+    const item = holdings.find((holding) => holding.id === row.dataset.holdingId);
+    if (item) toggleTradeDetails(item);
+  });
+  holdingsBody.addEventListener('keydown', (event) => {
+    if (!['Enter', ' '].includes(event.key) || !event.target.matches('tr.holding-summary-row')) return;
+    event.preventDefault();
+    const item = holdings.find((holding) => holding.id === event.target.dataset.holdingId);
+    if (item) toggleTradeDetails(item);
+  });
   holdingsBody.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]'); if (!button) return;
     const item = holdings.find((row) => row.id === button.dataset.id); if (!item) return;
-    if (button.dataset.action === 'details') { if (expandedTradeDetails.has(item.id)) expandedTradeDetails.delete(item.id); else expandedTradeDetails.add(item.id); render(); return; }
+    if (button.dataset.action === 'details') { toggleTradeDetails(item); return; }
     if (button.dataset.action === 'buy') openBuyDialog(item);
     if (button.dataset.action === 'edit') openEditor(item);
     if (button.dataset.action === 'delete') { deleteTarget = item.id; $('#confirmDialog').showModal(); }
