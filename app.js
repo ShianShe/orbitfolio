@@ -355,6 +355,7 @@
     resetForm();
     editOpeningPosition = Boolean(item && editOpening);
     $('#initialFees').value = '0'; $('#initialFeeField').hidden = Boolean(item);
+    $('#initialFeeHint').hidden = Boolean(item);
     if (item) {
       $('#dialogTitle').textContent = '編輯持股'; $('#holdingId').value = item.id;
       $('#symbol').value = item.symbol; $('#name').value = item.name; $('#assetType').value = item.type;
