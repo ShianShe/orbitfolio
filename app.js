@@ -232,13 +232,13 @@
   function tradesFor(symbol) { return trades.filter((trade) => trade.symbol === symbol); }
   function renderTradeDetails(item) {
     const baselineShares = Number(item.initialShares ?? item.shares) || 0;
-    const openingPosition = baselineShares > 0 ? [{ side: 'opening', shares: baselineShares, price: Number(item.cost) || 0, fees: null, tradedAt: item.purchaseDate ? `${item.purchaseDate}T12:00:00+08:00` : '', notes: '初始持股基礎（非逐筆成交紀錄）' }] : [];
+    const openingPosition = baselineShares > 0 ? [{ side: 'opening', shares: baselineShares, price: Number(item.cost) || 0, fees: null, tradedAt: item.purchaseDate ? `${item.purchaseDate}T12:00:00+08:00` : '', notes: '' }] : [];
     const rows = [...openingPosition, ...tradesFor(item.symbol)].sort((a, b) => String(b.tradedAt).localeCompare(String(a.tradedAt)));
     if (!rows.length) return '<div class="transaction-empty">這檔持股目前沒有持倉基礎或成交紀錄。</div>';
     const details = rows.map((trade) => {
-      const date = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : (trade.side === 'opening' ? '初始部位' : '—');
+      const date = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
       const totalCost = Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0);
-      return `<tr><td>${date}</td><td>${trade.side === 'opening' ? '初始持有' : trade.side === 'buy' ? '買進' : '賣出'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${trade.fees == null ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
+      return `<tr><td>${date}</td><td>${trade.side === 'sell' ? '賣出' : '買進'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${trade.fees == null ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
     }).join('');
     return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">成交單價</th><th class="numeric">手續費</th><th class="numeric">本次總成本</th><th>備註</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
   }
