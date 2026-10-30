@@ -40,14 +40,14 @@
       </nav>
       <div class="sidebar-bottom">
         <div class="sync-card"><span class="sync-dot" id="syncDot"></span><div><strong id="syncTitle">單一裝置模式</strong><small id="syncDetail">資料保存在此瀏覽器</small></div></div>
-        <div class="profile"><div class="avatar">S</div><div><strong>我的投資組合</strong><small>個人帳戶</small></div><span class="more">···</span></div>
+        <div class="profile"><div class="avatar">S</div><div><strong>我的投資組合</strong><small>個人帳戶</small></div></div>
       </div>
     </aside>
 
     <main class="main-content" id="overview">
       <header class="topbar">
         <div class="breadcrumb">投資組合 <span>/</span> 我的持股</div>
-        <div class="top-actions"><span class="today-label" id="todayLabel"></span><button class="icon-button" aria-label="通知">♧<i></i></button><span class="account-email" id="accountEmail" hidden></span><button class="button subtle signout-button" id="signOut" hidden>登出</button><div class="avatar small">S</div></div>
+        <div class="top-actions"><span class="today-label" id="todayLabel"></span><span class="account-email" id="accountEmail" hidden></span><button class="button subtle signout-button" id="signOut" hidden>登出</button><div class="avatar small">S</div></div>
       </header>
 
       <section class="page-heading">
@@ -79,7 +79,7 @@
         <div class="section-heading"><div><h2>持股清單 <span class="count-pill" id="holdingCount">1</span></h2><p>你的所有股票與 ETF 都在這裡。</p></div><button class="button subtle" id="exportCsv"><span>⇩</span>匯出 CSV</button></div>
         <div class="toolbar">
           <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱"><kbd>⌘ K</kbd></label>
-          <div class="toolbar-right"><label class="filter-wrap"><span>類型</span><select id="typeFilter" aria-label="依資產類型篩選"><option value="all">全部類型</option><option value="ETF">ETF</option><option value="個股">個股</option></select></label><label class="import-button button subtle">⇧ 匯入 CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden></label><button class="icon-button table-menu" aria-label="更多清單選項">···</button></div>
+          <div class="toolbar-right"><label class="filter-wrap"><span>類型</span><select id="typeFilter" aria-label="依資產類型篩選"><option value="all">全部類型</option><option value="ETF">ETF</option><option value="個股">個股</option></select></label><label class="import-button button subtle">⇧ 匯入 CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden></label></div>
         </div>
         <div class="table-wrap"><table>
           <thead><tr><th class="check-cell"><input type="checkbox" aria-label="選取全部" disabled></th><th>資產 <span class="sort">↕</span></th><th>類型</th><th class="numeric">持有股數</th><th class="numeric">平均成本</th><th class="numeric">總投入成本</th><th class="numeric">最新價格</th><th class="numeric">市值</th><th class="numeric">未實現損益</th><th></th></tr></thead>
