@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f4">
+  <title>持股管理｜投資組合</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="持股管理首頁">
+        <span class="brand-mark">O</span><span>orbit<span class="brand-light">folio</span></span>
+      </a>
+      <div class="workspace-label">個人工作區</div>
+      <nav class="main-nav" aria-label="主要導覽">
+        <a href="#overview" class="nav-item"><span class="nav-icon">◫</span>投資總覽</a>
+        <a href="#holdings" class="nav-item active"><span class="nav-icon">▤</span>我的持股<span class="nav-count" id="navCount">1</span></a>
+        <a href="#exit-plan" class="nav-item"><span class="nav-icon">↗</span>退出計畫</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sync-card"><span class="sync-dot"></span><div><strong>資料已儲存</strong><small>保存在此裝置</small></div></div>
+        <div class="profile"><div class="avatar">林</div><div><strong>我的投資組合</strong><small>個人帳戶</small></div><span class="more">···</span></div>
+      </div>
+    </aside>
+
+    <main class="main-content" id="overview">
+      <header class="topbar">
+        <div class="breadcrumb">投資組合 <span>/</span> 我的持股</div>
+        <div class="top-actions"><span class="today-label" id="todayLabel"></span><button class="icon-button" aria-label="通知">♧<i></i></button><div class="avatar small">林</div></div>
+      </header>
+
+      <section class="page-heading">
+        <div><div class="eyebrow">PORTFOLIO</div><h1>我的持股</h1><p>管理你的投資部位，掌握每一筆資產配置。</p></div>
+        <button class="button primary" id="addHolding"><span class="plus">＋</span>新增持股</button>
+      </section>
+
+      <section class="summary-grid" aria-label="投資總覽">
+        <article class="summary-card total-card">
+          <div class="card-top"><span>總投入成本</span><span class="card-icon violet">◈</span></div>
+          <div class="metric" id="totalCost">NT$ 0</div><div class="card-foot"><span class="mini-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="assetCount">0 項資產</span></div>
+        </article>
+        <article class="summary-card">
+          <div class="card-top"><span>目前市值</span><span class="card-icon blue">▧</span></div>
+          <div class="metric" id="marketValue">—</div><div class="card-foot"><span class="muted-dot"></span><span id="marketNote">尚無行情資料</span></div>
+        </article>
+        <article class="summary-card">
+          <div class="card-top"><span>未實現損益</span><span class="card-icon green">↗</span></div>
+          <div class="metric" id="unrealized">—</div><div class="card-foot"><span>待取得最新價格</span></div>
+        </article>
+        <article class="summary-card allocation-card">
+          <div class="card-top"><span>資產配置</span><span class="card-icon amber">◉</span></div>
+          <div class="allocation"><div class="donut"><span id="allocationCount">1</span></div><div><strong id="allocationTypes">ETF 100%</strong><small>依投入成本計算</small></div></div>
+        </article>
+      </section>
+
+      <section class="holdings-section" id="holdings">
+        <div class="section-heading"><div><h2>持股清單 <span class="count-pill" id="holdingCount">1</span></h2><p>你的所有股票與 ETF 都在這裡。</p></div><button class="button subtle" id="exportCsv"><span>⇩</span>匯出 CSV</button></div>
+        <div class="toolbar">
+          <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱"><kbd>⌘ K</kbd></label>
+          <div class="toolbar-right"><label class="filter-wrap"><span>類型</span><select id="typeFilter" aria-label="依資產類型篩選"><option value="all">全部類型</option><option value="ETF">ETF</option><option value="個股">個股</option></select></label><label class="import-button button subtle">⇧ 匯入 CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden></label><button class="icon-button table-menu" aria-label="更多清單選項">···</button></div>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th class="check-cell"><input type="checkbox" aria-label="選取全部" disabled></th><th>資產 <span class="sort">↕</span></th><th>類型</th><th class="numeric">持有股數</th><th class="numeric">平均成本</th><th class="numeric">總投入成本</th><th class="numeric">最新價格</th><th class="numeric">市值</th><th class="numeric">未實現損益</th><th></th></tr></thead>
+          <tbody id="holdingsBody"></tbody>
+        </table><div class="empty-state" id="emptyState" hidden><div class="empty-icon">⌕</div><strong>找不到符合條件的持股</strong><span>試試其他關鍵字或篩選條件。</span></div></div>
+        <div class="table-footer"><span id="tableSummary">顯示 1 項資產</span><span>價格資料由你自行更新 <span class="info">ⓘ</span></span></div>
+      </section>
+
+      <section class="exit-section" id="exit-plan">
+        <div class="exit-heading"><div class="exit-symbol">↗</div><div><div class="eyebrow">EXIT PLAN</div><h2>00631L 分批退出計畫</h2><p>每批 400 股，僅在確認實際成交後更新持有部位。</p></div><span class="plan-status"><i></i>進行中</span></div>
+        <div class="exit-progress"><div class="progress-title"><strong>退出進度</strong><span id="exitProgressText">0 / 1,200 股已賣出</span></div><div class="progress-track"><span id="exitProgressBar"></span></div><div class="batch-grid" id="batchGrid"></div></div>
+        <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股。完成交易後，請新增交易紀錄；持股數量將依交易紀錄計算。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
+      </section>
+      <footer class="page-footer"><span>Orbitfolio <span>·</span> 你的投資，清晰管理。</span><span>資料儲存在你的瀏覽器中</span></footer>
+    </main>
+  </div>
+
+  <dialog id="holdingDialog" class="modal">
+    <form id="holdingForm" novalidate>
+      <div class="modal-header"><div><div class="eyebrow">HOLDING DETAILS</div><h2 id="dialogTitle">新增持股</h2></div><button type="button" class="close-button" data-close aria-label="關閉">×</button></div>
+      <input type="hidden" id="holdingId">
+      <div class="form-grid">
+        <label class="field"><span>股票代號 <b>*</b></span><input id="symbol" required maxlength="20" placeholder="例如 00631L"><small class="field-error" data-error="symbol"></small></label>
+        <label class="field"><span>股票名稱 <b>*</b></span><input id="name" required maxlength="60" placeholder="輸入資產名稱"><small class="field-error" data-error="name"></small></label>
+        <label class="field"><span>資產類型 <b>*</b></span><select id="assetType" required><option value="ETF">ETF</option><option value="個股">個股</option></select></label>
+        <label class="field"><span>持有股數 <b>*</b></span><input id="shares" type="number" min="0.0001" step="any" required placeholder="0"></label>
+        <label class="field"><span>平均成本 <b>*</b></span><div class="input-prefix"><span>NT$</span><input id="cost" type="number" min="0.0001" step="any" required placeholder="0.00"></div></label>
+        <label class="field"><span>買進日期 <small>選填</small></span><input id="purchaseDate" type="date"></label>
+        <label class="field full"><span>備註 <small>選填</small></span><textarea id="notes" rows="3" maxlength="500" placeholder="新增備註"></textarea></label>
+      </div>
+      <div class="modal-info">最新價格將在行情資料串接後自動更新；目前不會填入預設價格。</div>
+      <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button primary">儲存持股</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDialog" class="modal confirm-modal"><div class="confirm-icon">!</div><h2>刪除這筆持股？</h2><p>刪除後無法復原。相關交易紀錄（若有）不會一併刪除。</p><div class="modal-actions"><button class="button subtle" data-close>取消</button><button class="button danger" id="confirmDelete">確認刪除</button></div></dialog>
+  <dialog id="messageDialog" class="modal confirm-modal"><div class="confirm-icon success">✓</div><h2 id="messageTitle">完成</h2><p id="messageText"></p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
+  <dialog id="exitInfoDialog" class="modal confirm-modal"><div class="confirm-icon success">↗</div><h2>分三批退出</h2><p>00631L 初始持有 1,200 股，規劃分三批、每批 400 股。每批成交後應新增交易紀錄；成交紀錄是持股變動的依據。</p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
