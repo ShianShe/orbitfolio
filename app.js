@@ -279,7 +279,7 @@
       const detailsOpen = expandedTradeDetails.has(item.id);
       return `<tr class="holding-summary-row" data-holding-id="${escapeHtml(item.id)}" tabindex="0" aria-expanded="${detailsOpen}" aria-label="${escapeHtml(item.symbol)} 持股摘要，按 Enter 展開或收合交易明細">
         <td class="check-cell"><input type="checkbox" aria-label="選取 ${escapeHtml(item.symbol)}" disabled></td>
-        <td><div class="asset-cell"><div class="ticker-icon ${item.type === 'ETF' ? 'etf' : 'stock'}">${icon}</div><div class="asset-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}${item.purchaseDate ? ` · ${escapeHtml(item.purchaseDate)}` : ''}</small></div></div></td>
+        <td><div class="asset-cell"><div class="ticker-icon ${item.type === 'ETF' ? 'etf' : 'stock'}">${icon}</div><div class="asset-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}${item.purchaseDate ? ` · ${escapeHtml(item.purchaseDate)}` : ''}</small></div><button class="disclosure-button" type="button" data-action="details" data-id="${escapeHtml(item.id)}" aria-expanded="${detailsOpen}" aria-label="${detailsOpen ? '收合' : '展開'} ${escapeHtml(item.symbol)} 交易明細" title="${detailsOpen ? '收合交易明細' : '展開交易明細'}">${detailsOpen ? '⌃' : '⌄'}</button></div></td>
         <td><span class="type-badge">${escapeHtml(item.type)}</span></td>
         <td class="numeric amount">${number(shares)}</td><td class="numeric amount">${unitMoney(cost)}</td><td class="numeric amount">${money(totalCost)}</td>
         <td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? `${money(price)}<small class="quote-meta">${escapeHtml(quoteDescription(item))}</small>` : '尚無行情'}</td><td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? money(market) : '—'}</td>
