@@ -27,6 +27,11 @@
   function saveHoldings() { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(holdings)); }
   function saveTrades() { localStorage.setItem(TRADES_KEY, JSON.stringify(trades)); }
   function savePlans() { localStorage.setItem(PLANS_KEY, JSON.stringify(plans)); }
+  function clearPortfolioCache() {
+    localStorage.removeItem(HOLDINGS_KEY);
+    localStorage.removeItem(TRADES_KEY);
+    localStorage.removeItem(PLANS_KEY);
+  }
   function isUuid(value) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '')); }
   function fromHoldingRow(row) {
     return { id: row.id, symbol: row.symbol, name: row.name, type: row.asset_type, shares: Number(row.shares), cost: Number(row.average_cost), purchaseDate: row.purchase_date || '', notes: row.notes || '', price: row.latest_price == null ? null : Number(row.latest_price), createdAt: row.created_at };
@@ -235,7 +240,12 @@
   document.querySelectorAll('dialog').forEach((dialog) => dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); }));
   $('#exitLearnMore').addEventListener('click', () => $('#exitInfoDialog').showModal());
 
-  function csvCell(value) { const text = String(value ?? ''); return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
+  function csvCell(value) {
+    let text = String(value ?? '');
+    // Prevent spreadsheet formula execution when user-controlled text is opened in Excel/Sheets.
+    if (/^[\s\u0000-\u001f]*[=+@-]/.test(text)) text = `'${text}`;
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
   $('#exportCsv').addEventListener('click', () => {
     const headers = ['股票代號', '股票名稱', '資產類型', '持有股數', '平均成本', '買進日期', '備註'];
     const rows = holdings.map((item) => [item.symbol, item.name, item.type, getDisplayShares(item), item.cost, item.purchaseDate, item.notes]);
@@ -294,6 +304,7 @@
     $('#authFeedback').textContent = ''; $('#authFeedback').classList.remove('success');
   }
   function showAuthGate(message = '') {
+    if (currentUser) clearPortfolioCache();
     currentUser = null; $('#appShell').hidden = true; $('#authGate').hidden = false;
     $('#accountEmail').hidden = true; $('#signOut').hidden = true;
     $('#authFeedback').textContent = message; $('#authFeedback').classList.remove('success');
