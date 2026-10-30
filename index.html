@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=dollar-display">
+  <link rel="stylesheet" href="styles.css?v=edit-single-trade">
 </head>
 <body>
   <section class="auth-gate" id="authGate" hidden>
@@ -152,12 +152,28 @@
     </form>
   </dialog>
 
+  <dialog id="tradeEditDialog" class="modal">
+    <form id="tradeEditForm" novalidate>
+      <div class="modal-header"><div><div class="eyebrow">EDIT TRANSACTION</div><h2>修改成交紀錄</h2><p class="buy-symbol" id="tradeEditSymbol"></p></div><button type="button" class="close-button" data-close aria-label="關閉">×</button></div>
+      <input type="hidden" id="tradeEditId">
+      <div class="form-grid">
+        <label class="field"><span>成交股數 <b>*</b></span><input id="tradeEditShares" type="number" min="0.0001" step="0.0001" required></label>
+        <label class="field"><span>成交單價 <b>*</b></span><div class="input-prefix"><span>$</span><input id="tradeEditPrice" type="number" min="0.0001" step="any" required></div></label>
+        <label class="field"><span>手續費</span><div class="input-prefix"><span>$</span><input id="tradeEditFees" type="number" min="0" step="0.01" required></div></label>
+        <label class="field"><span>成交日期 <b>*</b></span><input id="tradeEditDate" type="date" required></label>
+        <label class="field full"><span>備註 <small>選填</small></span><textarea id="tradeEditNotes" rows="2" maxlength="500"></textarea></label>
+      </div>
+      <div class="modal-info">儲存後會更新這一筆成交紀錄，持股與均價會依所有成交重新計算。</div>
+      <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button primary" id="tradeEditSubmit">儲存修改</button></div>
+    </form>
+  </dialog>
+
   <dialog id="confirmDialog" class="modal confirm-modal"><div class="confirm-icon">!</div><h2>刪除這筆持股？</h2><p>刪除後無法復原。相關交易紀錄（若有）不會一併刪除。</p><div class="modal-actions"><button class="button subtle" data-close>取消</button><button class="button danger" id="confirmDelete">確認刪除</button></div></dialog>
   <dialog id="messageDialog" class="modal confirm-modal"><div class="confirm-icon success">✓</div><h2 id="messageTitle">完成</h2><p id="messageText"></p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
   <dialog id="exitInfoDialog" class="modal confirm-modal"><div class="confirm-icon success">↗</div><h2>分三批退出</h2><p>00631L 初始持有 1,200 股，規劃分三批、每批 400 股。賣出建議不會自動扣除持股；目前成交紀錄已支援買進，賣出記帳功能尚未開放。</p><div class="modal-actions"><button class="button primary" data-close>知道了</button></div></dialog>
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
-  <script src="app.js?v=dollar-display"></script>
+  <script src="app.js?v=edit-single-trade"></script>
 </body>
 </html>

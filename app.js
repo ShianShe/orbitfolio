@@ -21,6 +21,7 @@
   let trades = readJson(TRADES_KEY, []);
   let plans = readJson(PLANS_KEY, null);
   let deleteTarget = null;
+  let editOpeningPosition = false;
   let quoteLookupSequence = 0;
   let quoteRefreshInFlight = false;
   let symbolLookupPromise = Promise.resolve();
@@ -83,6 +84,20 @@
       fees: trade.fees,
       notes: trade.notes
     }).select().single();
+    if (error) throw error;
+    return rowToTrade(data);
+  }
+  async function updateTradeRecord(trade) {
+    if (!cloudClient) return trade;
+    if (!currentUser) throw new Error('請先登入再修改成交紀錄。');
+    if (!isUuid(trade.id)) throw new Error('這筆資料尚未同步，請重新登入同步後再修改。');
+    const { data, error } = await cloudClient.from('trades').update({
+      shares: trade.shares,
+      execution_price: trade.price,
+      traded_at: trade.tradedAt,
+      fees: trade.fees,
+      notes: trade.notes
+    }).eq('id', trade.id).eq('user_id', currentUser.id).select().single();
     if (error) throw error;
     return rowToTrade(data);
   }
@@ -242,9 +257,12 @@
     const details = rows.map((trade) => {
       const date = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
       const totalCost = Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0);
-      return `<tr><td>${date}</td><td>${trade.side === 'sell' ? '賣出' : '買進'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${trade.fees == null ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td></tr>`;
+      const editButton = trade.id
+        ? `<button class="trade-edit-button" type="button" data-action="edit-trade" data-id="${escapeHtml(trade.id)}">修改</button>`
+        : trade.side === 'opening' ? `<button class="trade-edit-button" type="button" data-action="edit-opening" data-id="${escapeHtml(item.id)}">修改</button>` : '—';
+      return `<tr><td>${date}</td><td>${trade.side === 'sell' ? '賣出' : '買進'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${trade.fees == null ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td><td>${editButton}</td></tr>`;
     }).join('');
-    return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">成交單價</th><th class="numeric">手續費</th><th class="numeric">本次總成本</th><th>備註</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
+    return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">成交單價</th><th class="numeric">手續費</th><th class="numeric">本次總成本</th><th>備註</th><th>操作</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
   }
   function soldShares(symbol) { return tradesFor(symbol).filter((trade) => trade.side === 'sell').reduce((sum, trade) => sum + Number(trade.shares || 0), 0); }
   function getDisplayCost(item) {
@@ -333,14 +351,18 @@
     holdingForm.reset(); $('#holdingId').value = ''; $('#dialogTitle').textContent = '新增持股'; delete $('#name').dataset.autoSymbol; $('#shares').disabled = false; $('#cost').disabled = false; symbolLookupPromise = Promise.resolve();
     document.querySelectorAll('.field-error').forEach((el) => el.textContent = '');
   }
-  function openEditor(item = null) {
+  function openEditor(item = null, editOpening = false) {
     resetForm();
+    editOpeningPosition = Boolean(item && editOpening);
     $('#initialFees').value = '0'; $('#initialFeeField').hidden = Boolean(item);
     if (item) {
       $('#dialogTitle').textContent = '編輯持股'; $('#holdingId').value = item.id;
       $('#symbol').value = item.symbol; $('#name').value = item.name; $('#assetType').value = item.type;
-      $('#shares').value = getDisplayShares(item); $('#cost').value = getDisplayCost(item).toFixed(2); $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
-      if (tradesFor(item.symbol).length) { $('#shares').disabled = true; $('#cost').disabled = true; $('#costLockHint').hidden = false; } else $('#costLockHint').hidden = true;
+      $('#shares').value = editOpeningPosition ? Number(item.initialShares ?? item.shares) : getDisplayShares(item);
+      $('#cost').value = (editOpeningPosition ? Number(item.cost) : getDisplayCost(item)).toFixed(2); $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
+      if (tradesFor(item.symbol).length && !editOpeningPosition) { $('#shares').disabled = true; $('#cost').disabled = true; $('#costLockHint').textContent = '已有成交紀錄；均價由持股基礎與買進紀錄計算。請新增買進，不要覆寫歷史。'; $('#costLockHint').hidden = false; }
+      else if (editOpeningPosition) { $('#costLockHint').textContent = '此處只修改既有持倉基礎，其他逐筆成交紀錄不會變動。'; $('#costLockHint').hidden = false; }
+      else $('#costLockHint').hidden = true;
       $('#quoteLookupStatus').textContent = item.price != null ? `最近收盤 ${money(item.price)} · ${quoteDescription(item)}` : '尚無行情，輸入代號後可查詢。';
     } else { $('#costLockHint').hidden = true; $('#shares').disabled = false; $('#quoteLookupStatus').textContent = '輸入代號後自動帶入名稱及最近收盤價。'; }
     holdingDialog.showModal();
@@ -405,12 +427,13 @@
     const inputShares = Number($('#shares').value);
     const inputCost = Number($('#cost').value);
     const initialFees = previous ? 0 : Number($('#initialFees').value || 0);
-    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: previous && tradesFor(previous.symbol).length ? previous.shares : inputShares, cost: previous && tradesFor(previous.symbol).length ? previous.cost : (inputCost * inputShares + initialFees) / inputShares, purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
+    const keepExistingBasis = previous && tradesFor(previous.symbol).length && !editOpeningPosition;
+    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: keepExistingBasis ? previous.shares : inputShares, cost: keepExistingBasis ? previous.cost : editOpeningPosition ? inputCost : (inputCost * inputShares + initialFees) / inputShares, purchaseDate: $('#purchaseDate').value, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
     const saveButton = holdingForm.querySelector('[type="submit"]'); saveButton.disabled = true;
     try {
       const saved = await persistHolding(item);
       if (previous) {
-        if (previous.initialShares != null) saved.initialShares = previous.initialShares;
+        if (previous.initialShares != null) saved.initialShares = editOpeningPosition ? inputShares : previous.initialShares;
         holdings = holdings.map((row) => row.id === id ? saved : row);
       } else holdings.push(saved);
       saveHoldings(); holdingDialog.close(); render(); showToast(cloudClient ? '持股已儲存並同步' : previous ? '持股資料已更新' : '持股已新增');
@@ -479,6 +502,43 @@
     const item = holdings.find((holding) => holding.id === row.dataset.holdingId);
     if (item) toggleTradeDetails(item);
   });
+  function openTradeEditor(trade) {
+    const holding = holdings.find((item) => item.symbol === trade.symbol);
+    if (!holding) return;
+    $('#tradeEditId').value = trade.id;
+    $('#tradeEditSymbol').textContent = `${holding.symbol} ${holding.name} · ${trade.side === 'buy' ? '買進' : '賣出'}`;
+    $('#tradeEditShares').value = trade.shares;
+    $('#tradeEditPrice').value = trade.price;
+    $('#tradeEditFees').value = trade.fees ?? 0;
+    $('#tradeEditDate').value = taipeiDateString(new Date(trade.tradedAt));
+    $('#tradeEditNotes').value = trade.notes || '';
+    $('#tradeEditDialog').showModal();
+  }
+  $('#tradeEditForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const index = trades.findIndex((trade) => trade.id === $('#tradeEditId').value);
+    if (index < 0) return;
+    const shares = Number($('#tradeEditShares').value);
+    const price = Number($('#tradeEditPrice').value);
+    const fees = Number($('#tradeEditFees').value);
+    const date = $('#tradeEditDate').value;
+    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
+      showMessage('資料需確認', '成交股數與單價必須大於 0，手續費不可小於 0。'); return;
+    }
+    if (!date || Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())) { showMessage('資料需確認', '請選擇有效的成交日期。'); return; }
+    const oldTrade = trades[index];
+    const editedTrade = { ...oldTrade, shares, price, fees, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#tradeEditNotes').value.trim() };
+    const button = $('#tradeEditSubmit'); button.disabled = true;
+    try {
+      const saved = await updateTradeRecord(editedTrade);
+      trades[index] = saved; saveTrades();
+      const holding = holdings.find((item) => item.symbol === saved.symbol);
+      if (holding) expandedTradeDetails.add(holding.id);
+      $('#tradeEditDialog').close(); render();
+      showToast(holding ? `成交紀錄已修改；目前持有 ${number(getDisplayShares(holding))} 股，均價 ${unitMoney(getDisplayCost(holding))}` : '成交紀錄已修改');
+    } catch (error) { showMessage('修改失敗', error.message || '請確認雲端連線後重試。'); }
+    finally { button.disabled = false; }
+  });
   holdingsBody.addEventListener('keydown', (event) => {
     if (!['Enter', ' '].includes(event.key) || !event.target.matches('tr.holding-summary-row')) return;
     event.preventDefault();
@@ -487,8 +547,14 @@
   });
   holdingsBody.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]'); if (!button) return;
+    if (button.dataset.action === 'edit-trade') {
+      const trade = trades.find((row) => row.id === button.dataset.id);
+      if (trade) openTradeEditor(trade);
+      return;
+    }
     const item = holdings.find((row) => row.id === button.dataset.id); if (!item) return;
     if (button.dataset.action === 'details') { toggleTradeDetails(item); return; }
+    if (button.dataset.action === 'edit-opening') { openEditor(item, true); return; }
     if (button.dataset.action === 'buy') openBuyDialog(item);
     if (button.dataset.action === 'edit') openEditor(item);
     if (button.dataset.action === 'delete') { deleteTarget = item.id; $('#confirmDialog').showModal(); }
