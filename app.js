@@ -4,6 +4,9 @@
   const LEGACY_POSITION_MARKER = '[orbitfolio:position-migrated-to-trade-v1]';
   const UNKNOWN_FEE_MARKER = '[orbitfolio:fee-not-recorded-v1]';
   const PLANS_KEY = 'orbitfolio.exitPlans.v1';
+  const STOCK_OBSERVATIONS_KEY = 'orbitfolio.stockObservations.v1';
+  const STOCK_OBSERVATION_HISTORY_KEY = 'orbitfolio.stockObservationHistory.v1';
+  const STOCK_OBSERVATION_NOTES_KEY = 'orbitfolio.stockObservationNotes.v1';
   const FINMIND_API = 'https://api.finmindtrade.com/api/v4/data';
   const QUOTE_SOURCE = 'FinMind';
   const DEFAULT_HOLDINGS = [{ id: 'holding-00631L', symbol: '00631L', name: '元大台灣50正2', type: 'ETF', shares: 1200, cost: 25.5, purchaseDate: '', notes: '', price: null, createdAt: new Date().toISOString() }];
@@ -24,6 +27,12 @@
   let holdings = readJson(HOLDINGS_KEY, null);
   let trades = readJson(TRADES_KEY, []);
   let plans = readJson(PLANS_KEY, null);
+  let stockObservations = readJson(STOCK_OBSERVATIONS_KEY, []);
+  let stockObservationHistory = readJson(STOCK_OBSERVATION_HISTORY_KEY, []);
+  let stockObservationNotes = readJson(STOCK_OBSERVATION_NOTES_KEY, []);
+  let selectedWatchSymbol = '';
+  const watchNoteDrafts = new Map();
+  let watchLookupPromise = Promise.resolve();
   let deleteTarget = null;
   let quoteLookupSequence = 0;
   let quoteRefreshInFlight = false;
@@ -31,8 +40,13 @@
   const stockInfoCache = new Map();
   const quoteCache = new Map();
   const expandedTradeDetails = new Set();
+  const watchDataCache = new Map();
+  let watchRequestSequence = 0;
   if (!Array.isArray(holdings)) { holdings = DEFAULT_HOLDINGS; saveHoldings(); }
   if (!Array.isArray(trades)) { trades = []; saveTrades(); }
+  if (!Array.isArray(stockObservations)) { stockObservations = []; saveStockObservations(); }
+  if (!Array.isArray(stockObservationHistory)) { stockObservationHistory = []; saveStockObservationHistory(); }
+  if (!Array.isArray(stockObservationNotes)) { stockObservationNotes = []; saveStockObservationNotes(); }
   migrateLegacyPositionsLocally();
   if (!plans || !plans['00631L']) { plans = { ...(plans || {}), '00631L': { totalShares: 1200, batches: [400, 400, 400] } }; savePlans(); }
 
@@ -40,10 +54,16 @@
   function saveHoldings() { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(holdings)); }
   function saveTrades() { localStorage.setItem(TRADES_KEY, JSON.stringify(trades)); }
   function savePlans() { localStorage.setItem(PLANS_KEY, JSON.stringify(plans)); }
+  function saveStockObservations() { localStorage.setItem(STOCK_OBSERVATIONS_KEY, JSON.stringify(stockObservations)); }
+  function saveStockObservationHistory() { localStorage.setItem(STOCK_OBSERVATION_HISTORY_KEY, JSON.stringify(stockObservationHistory)); }
+  function saveStockObservationNotes() { localStorage.setItem(STOCK_OBSERVATION_NOTES_KEY, JSON.stringify(stockObservationNotes)); }
   function clearPortfolioCache() {
     localStorage.removeItem(HOLDINGS_KEY);
     localStorage.removeItem(TRADES_KEY);
     localStorage.removeItem(PLANS_KEY);
+    localStorage.removeItem(STOCK_OBSERVATIONS_KEY);
+    localStorage.removeItem(STOCK_OBSERVATION_HISTORY_KEY);
+    localStorage.removeItem(STOCK_OBSERVATION_NOTES_KEY);
   }
   function isUuid(value) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '')); }
   function fromHoldingRow(row) {
@@ -80,6 +100,50 @@
   function tradeNotesForStorage(trade) {
     const notes = String(trade.notes || '').trim();
     return [notes, trade.isMigratedPosition ? LEGACY_POSITION_MARKER : '', trade.feesUnknown ? UNKNOWN_FEE_MARKER : ''].filter(Boolean).join('\n');
+  }
+  function fromStockObservationRow(row) {
+    return { id: row.id, symbol: row.symbol, name: row.name, decisionStatus: row.decision_status, notes: row.notes || '', updatedAt: row.updated_at };
+  }
+  function fromStockObservationHistoryRow(row) {
+    return { id: row.id, observationId: row.observation_id, symbol: row.symbol || '', decisionStatus: row.decision_status, notes: row.notes || '', changedAt: row.changed_at };
+  }
+  function fromStockObservationNoteRow(row, symbol = '') {
+    return { id: row.id, observationId: row.observation_id, symbol, note: row.note, createdAt: row.created_at };
+  }
+  async function persistStockObservation(observation) {
+    if (!cloudClient) return { ...observation, id: observation.id || `watch-${Date.now()}`, updatedAt: new Date().toISOString() };
+    if (!currentUser) throw new Error('請先登入再儲存個股觀察。');
+    const { data, error } = await cloudClient.from('stock_observations').upsert({
+      user_id: currentUser.id,
+      symbol: observation.symbol,
+      name: observation.name,
+      decision_status: observation.decisionStatus,
+      notes: observation.notes,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,symbol' }).select().single();
+    if (error) throw error;
+    return fromStockObservationRow(data);
+  }
+  async function persistStockObservationHistory(observation) {
+    const history = { id: `watch-history-${Date.now()}`, observationId: observation.id, symbol: observation.symbol, decisionStatus: observation.decisionStatus, notes: observation.notes, changedAt: new Date().toISOString() };
+    if (!cloudClient) return history;
+    if (!currentUser) throw new Error('請先登入再儲存決策修改紀錄。');
+    const { data, error } = await cloudClient.from('stock_observation_history').select('*')
+      .eq('observation_id', observation.id).order('changed_at', { ascending: false }).limit(1).single();
+    if (error) throw error;
+    return fromStockObservationHistoryRow({ ...data, symbol: observation.symbol });
+  }
+  async function persistStockObservationNote(observation, note) {
+    const row = { id: `watch-note-${Date.now()}`, observationId: observation.id, symbol: observation.symbol, note, createdAt: new Date().toISOString() };
+    if (!cloudClient) return row;
+    if (!currentUser) throw new Error('請先登入再新增個股觀察重點。');
+    const { data, error } = await cloudClient.from('stock_observation_notes').insert({
+      observation_id: observation.id,
+      user_id: currentUser.id,
+      note
+    }).select().single();
+    if (error) throw error;
+    return fromStockObservationNoteRow(data, observation.symbol);
   }
   function migrateLegacyPositionsLocally() {
     let changed = false;
@@ -130,16 +194,22 @@
     return rowToTrade(data);
   }
   async function loadCloudData(user) {
-    const [holdingResult, tradeResult, planResult] = await Promise.all([
+    const [holdingResult, tradeResult, planResult, observationResult, observationHistoryResult, observationNoteResult] = await Promise.all([
       cloudClient.from('holdings').select('*').order('symbol'),
       cloudClient.from('trades').select('*').order('traded_at'),
-      cloudClient.from('exit_plans').select('*').order('symbol')
+      cloudClient.from('exit_plans').select('*').order('symbol'),
+      cloudClient.from('stock_observations').select('*').order('symbol'),
+      cloudClient.from('stock_observation_history').select('*').order('changed_at', { ascending: false }),
+      cloudClient.from('stock_observation_notes').select('*').order('created_at', { ascending: false })
     ]);
-    for (const result of [holdingResult, tradeResult, planResult]) if (result.error) throw result.error;
+    for (const result of [holdingResult, tradeResult, planResult, observationResult, observationHistoryResult, observationNoteResult]) if (result.error) throw result.error;
     let cloudHoldings = holdingResult.data || [];
     let cloudTrades = tradeResult.data || [];
     let cloudPlans = planResult.data || [];
-    const isNewAccount = !cloudHoldings.length && !cloudTrades.length && !cloudPlans.length;
+    let cloudObservations = observationResult.data || [];
+    let cloudObservationHistory = observationHistoryResult.data || [];
+    let cloudObservationNotes = observationNoteResult.data || [];
+    const isNewAccount = !cloudHoldings.length && !cloudTrades.length && !cloudPlans.length && !cloudObservations.length;
     let localTradesToImport = [];
     if (isNewAccount) {
       const localHoldings = readJson(HOLDINGS_KEY, null);
@@ -158,7 +228,27 @@
     }
     holdings = cloudHoldings.map(fromHoldingRow);
     trades = cloudTrades.map(rowToTrade);
+    stockObservations = cloudObservations.map(fromStockObservationRow);
+    stockObservationHistory = cloudObservationHistory.map(fromStockObservationHistoryRow);
+    stockObservationNotes = cloudObservationNotes.map((row) => fromStockObservationNoteRow(row, stockObservations.find((item) => item.id === row.observation_id)?.symbol || ''));
     currentUser = user;
+    if (isNewAccount) {
+      const localObservations = readJson(STOCK_OBSERVATIONS_KEY, []);
+      if (Array.isArray(localObservations)) {
+        for (const localObservation of localObservations) {
+          const savedObservation = await persistStockObservation(localObservation);
+          stockObservations.push(savedObservation);
+          stockObservationHistory.push(await persistStockObservationHistory(savedObservation));
+        }
+      }
+      const localNotes = readJson(STOCK_OBSERVATION_NOTES_KEY, []);
+      if (Array.isArray(localNotes)) {
+        for (const localNote of localNotes) {
+          const observation = stockObservations.find((row) => row.symbol === localNote.symbol);
+          if (observation) stockObservationNotes.push(await persistStockObservationNote(observation, localNote.note));
+        }
+      }
+    }
     if (isNewAccount) {
       for (const localTrade of localTradesToImport) {
         const holding = holdings.find((item) => item.symbol === localTrade.symbol);
@@ -177,7 +267,7 @@
     }
     plans = Object.fromEntries(cloudPlans.map((plan) => [plan.symbol, { totalShares: Number(plan.initial_shares), batches: Array.isArray(plan.batches) ? plan.batches.map(Number) : [400, 400, 400] }]));
     if (!plans['00631L']) plans['00631L'] = { totalShares: 1200, batches: [400, 400, 400] };
-    saveHoldings(); saveTrades(); savePlans();
+    saveHoldings(); saveTrades(); savePlans(); saveStockObservations(); saveStockObservationHistory(); saveStockObservationNotes();
     $('#accountEmail').textContent = user.email || '已登入';
     $('#accountEmail').hidden = false; $('#signOut').hidden = false;
     $('#syncTitle').textContent = '雲端同步中'; $('#syncDetail').textContent = '已同步至你的帳號';
@@ -185,6 +275,7 @@
     $('#localModeNotice').hidden = true;
     $('#authGate').hidden = true; $('#appShell').hidden = false;
     render();
+    if (window.location.hash === '#watchlist') showCurrentPage();
     refreshHoldingQuotes({ quiet: true });
   }
   function toHoldingRowForUser(item, user) {
@@ -281,7 +372,7 @@
   }
   function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2400); }
   function setToday() { const now = new Date(); $('#todayLabel').textContent = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(now); }
-  const pageLabels = { overview: '投資總覽', holdings: '我的持股', plans: '持股計劃' };
+  const pageLabels = { overview: '投資總覽', holdings: '我的持股', watchlist: '個股觀察', plans: '持股計劃' };
   function showCurrentPage() {
     let page = window.location.hash.slice(1);
     if (!Object.hasOwn(pageLabels, page)) page = 'overview';
@@ -293,6 +384,15 @@
     });
     $('#currentPageLabel').textContent = pageLabels[page];
     if (window.location.hash !== `#${page}`) history.replaceState(null, '', `#${page}`);
+    if (page === 'watchlist') {
+      renderWatchList();
+      const entries = getWatchEntries();
+      if (!entries.some((entry) => entry.symbol === selectedWatchSymbol)) selectedWatchSymbol = entries[0]?.symbol || '';
+      if (selectedWatchSymbol) selectWatchStock(selectedWatchSymbol);
+      else {
+        $('#watchEmptyState').hidden = false; $('#watchDetailContent').hidden = true; $('#watchLoading').hidden = true;
+      }
+    }
   }
   window.addEventListener('hashchange', showCurrentPage);
   function tradesFor(symbol) { return trades.filter((trade) => trade.symbol === symbol); }
@@ -396,6 +496,245 @@
     $('#allocationTypes').textContent = stockCost > 0 ? `ETF ${etfPct}% · 個股 ${100 - etfPct}%` : `ETF ${etfPct}%`;
     renderPlan();
   }
+  function getWatchEntries() {
+    const entries = new Map();
+    for (const item of holdings.filter((holding) => holding.type === '個股')) {
+      entries.set(item.symbol, { symbol: item.symbol, name: item.name, holding: item, observation: stockObservations.find((row) => row.symbol === item.symbol) || null });
+    }
+    for (const observation of stockObservations) {
+      if (!entries.has(observation.symbol)) entries.set(observation.symbol, { symbol: observation.symbol, name: observation.name, holding: null, observation });
+    }
+    return [...entries.values()].sort((a, b) => a.symbol.localeCompare(b.symbol, 'zh-Hant'));
+  }
+  function decisionLabel(status) { return String(status || '觀察中'); }
+  function renderWatchList() {
+    const entries = getWatchEntries();
+    $('#watchStockCount').textContent = `${entries.length} 檔`;
+    $('#watchListEmpty').hidden = entries.length > 0;
+    $('#watchStockList').innerHTML = entries.map((entry) => {
+      const status = entry.observation?.decisionStatus || (entry.holding ? '持有中' : '觀察中');
+      const shares = entry.holding ? number(getDisplayShares(entry.holding)) : '';
+      return `<button class="watch-stock-option${entry.symbol === selectedWatchSymbol ? ' active' : ''}" type="button" data-watch-symbol="${escapeHtml(entry.symbol)}"><span><strong>${escapeHtml(entry.symbol)}</strong><small>${escapeHtml(entry.name)}</small></span><span class="watch-stock-meta"><small>${shares ? `${shares} 股` : '觀察中'}</small><i>${escapeHtml(decisionLabel(status))}</i></span></button>`;
+    }).join('');
+  }
+  function setWatchMetric(name, value) {
+    const element = document.querySelector(`[data-metric="${name}"]`);
+    if (element) element.textContent = value;
+  }
+  function signedPercent(value) { return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`; }
+  function periodLabel(date) {
+    if (!date) return '—';
+    const [year, month] = date.split('-').map(Number);
+    return `${year} 年第 ${Math.ceil(month / 3)} 季`;
+  }
+  function renderWatchPosition(entry, price = null) {
+    const item = entry.holding;
+    if (!item) {
+      $('#watchShares').textContent = '尚未持有'; $('#watchAverageCost').textContent = '—'; $('#watchPnl').textContent = '—'; $('#watchPnl').className = '';
+      return;
+    }
+    const shares = getDisplayShares(item), cost = getDisplayCost(item), marketPrice = price ?? item.price;
+    const pnl = marketPrice == null ? null : shares * (Number(marketPrice) - cost);
+    $('#watchShares').textContent = `${number(shares)} 股`;
+    $('#watchAverageCost').textContent = unitMoney(cost);
+    $('#watchPnl').textContent = pnl == null ? '尚無行情' : `${pnl >= 0 ? '+' : ''}${wholeMoney(pnl)}`;
+    $('#watchPnl').className = pnl == null ? '' : pnl >= 0 ? 'positive' : 'negative';
+  }
+  function renderWatchPrice(rows) {
+    const prices = rows.filter((row) => Number(row.close) > 0).sort((a, b) => b.date.localeCompare(a.date));
+    const latest = prices[0], previous = prices[1];
+    if (!latest) {
+      $('#watchQuoteMeta').textContent = '目前沒有可用的收盤行情';
+      ['price', 'daily', 'volume', 'change5', 'change20', 'lowBreak'].forEach((key) => setWatchMetric(key, '—'));
+      $('#watchLowStatus').classList.remove('is-breached'); renderWatchPosition(getWatchEntries().find((row) => row.symbol === selectedWatchSymbol), null);
+      return;
+    }
+    const pctFrom = (index) => prices[index] ? (Number(latest.close) / Number(prices[index].close) - 1) * 100 : null;
+    const daily = previous ? pctFrom(1) : null;
+    const fiveDay = pctFrom(5), twentyDay = pctFrom(20);
+    const recentLows = prices.slice(1, 21).map((row) => Number(row.min)).filter((value) => value > 0);
+    const rangeLow = recentLows.length ? Math.min(...recentLows) : null;
+    const breached = rangeLow != null && Number(latest.close) < rangeLow;
+    setWatchMetric('price', money(latest.close));
+    setWatchMetric('daily', daily == null ? '漲跌幅 —' : `今日 ${signedPercent(daily)}`);
+    setWatchMetric('volume', `${Number(latest.Trading_Volume || 0).toLocaleString('zh-TW')} 股`);
+    setWatchMetric('change5', fiveDay == null ? '資料不足' : signedPercent(fiveDay));
+    setWatchMetric('change20', twentyDay == null ? '資料不足' : signedPercent(twentyDay));
+    setWatchMetric('lowBreak', rangeLow == null ? '資料不足' : `${breached ? '已跌破' : '未跌破'}（低點 ${money(rangeLow)}）`);
+    $('#watchLowStatus').classList.toggle('is-breached', breached);
+    $('#watchQuoteMeta').textContent = `收盤資料日 ${latest.date} · 更新 ${formatTaipeiTime(new Date().toISOString())} · FinMind`;
+    const currentEntry = getWatchEntries().find((row) => row.symbol === selectedWatchSymbol);
+    renderWatchPosition(currentEntry, Number(latest.close));
+  }
+  function renderWatchFundamentals(revenueRows, statementRows) {
+    const revenues = revenueRows.filter((row) => Number(row.revenue) > 0).sort((a, b) => `${b.revenue_year}-${String(b.revenue_month).padStart(2, '0')}`.localeCompare(`${a.revenue_year}-${String(a.revenue_month).padStart(2, '0')}`));
+    const latestRevenue = revenues[0];
+    const previousYearRevenue = latestRevenue && revenues.find((row) => Number(row.revenue_year) === Number(latestRevenue.revenue_year) - 1 && Number(row.revenue_month) === Number(latestRevenue.revenue_month));
+    const revenueYoy = latestRevenue && previousYearRevenue ? (Number(latestRevenue.revenue) / Number(previousYearRevenue.revenue) - 1) * 100 : null;
+    setWatchMetric('revenueYoy', revenueYoy == null ? '資料不足' : signedPercent(revenueYoy));
+    setWatchMetric('revenuePeriod', latestRevenue ? `${latestRevenue.revenue_year} 年 ${latestRevenue.revenue_month} 月營收` : '尚無營收資料');
+    const epsRows = statementRows.filter((row) => row.type === 'EPS').sort((a, b) => b.date.localeCompare(a.date));
+    const latestEps = epsRows[0];
+    const periodRows = latestEps ? statementRows.filter((row) => row.date === latestEps.date) : [];
+    const getStatementValue = (type) => {
+      const row = periodRows.find((item) => item.type === type);
+      return row && Number.isFinite(Number(row.value)) ? Number(row.value) : null;
+    };
+    const revenue = getStatementValue('Revenue'), grossProfit = getStatementValue('GrossProfit');
+    setWatchMetric('eps', latestEps && Number.isFinite(Number(latestEps.value)) ? `$${Number(latestEps.value).toFixed(2)}` : '資料不足');
+    setWatchMetric('epsPeriod', latestEps ? periodLabel(latestEps.date) : '尚無季報資料');
+    setWatchMetric('grossMargin', revenue && grossProfit != null ? `${(grossProfit / revenue * 100).toFixed(2)}%` : '資料不足');
+    setWatchMetric('grossMarginPeriod', latestEps ? periodLabel(latestEps.date) : '尚無季報資料');
+    $('#watchFundamentalMeta').textContent = latestEps ? `財報期間截至 ${latestEps.date}` : '財報資料日期未知';
+  }
+  async function selectWatchStock(symbol, forceRefresh = false) {
+    const entry = getWatchEntries().find((row) => row.symbol === symbol);
+    if (!entry) return;
+    selectedWatchSymbol = symbol;
+    $('#watchNoteDraft').value = watchNoteDrafts.get(symbol) || '';
+    renderWatchList();
+    $('#watchEmptyState').hidden = true; $('#watchDetailContent').hidden = false; $('#watchLoading').hidden = true;
+    $('#watchSymbol').textContent = entry.symbol; $('#watchName').textContent = entry.name;
+    const observation = entry.observation;
+    $('#watchDecisionStatus').value = observation?.decisionStatus || (entry.holding ? '持有中' : '觀察中');
+    $('#watchNotes').value = observation?.notes || '';
+    $('#watchDecisionBadge').textContent = decisionLabel($('#watchDecisionStatus').value);
+    $('#watchSaveStatus').textContent = '';
+    renderWatchPosition(entry);
+    renderWatchHistory(observation);
+    renderWatchNotes(observation);
+    const cached = watchDataCache.get(symbol);
+    if (!forceRefresh && cached && Date.now() - cached.fetchedAt < 10 * 60 * 1000) {
+      renderWatchPrice(cached.prices); renderWatchFundamentals(cached.revenues, cached.statements); return;
+    }
+    const requestId = ++watchRequestSequence;
+    $('#watchLoading').hidden = false; $('#watchLoading').textContent = `正在載入 ${symbol} 的行情與財報資料…`;
+    $('#watchQuoteMeta').textContent = '行情載入中…'; $('#watchFundamentalMeta').textContent = '財報載入中…';
+    const startPrice = dateDaysAgo(90), startFundamental = dateDaysAgo(365 * 3);
+    const [priceResult, revenueResult, statementResult] = await Promise.allSettled([
+      fetchFinMind({ dataset: 'TaiwanStockPrice', data_id: symbol, start_date: startPrice }),
+      fetchFinMind({ dataset: 'TaiwanStockMonthRevenue', data_id: symbol, start_date: dateDaysAgo(540) }),
+      fetchFinMind({ dataset: 'TaiwanStockFinancialStatements', data_id: symbol, start_date: startFundamental })
+    ]);
+    if (requestId !== watchRequestSequence || selectedWatchSymbol !== symbol) return;
+    if (priceResult.status === 'fulfilled') renderWatchPrice(priceResult.value);
+    else { $('#watchQuoteMeta').textContent = `行情載入失敗：${priceResult.reason?.message || '請稍後重試'}`; }
+    if (revenueResult.status === 'fulfilled' && statementResult.status === 'fulfilled') {
+      renderWatchFundamentals(revenueResult.value, statementResult.value);
+      watchDataCache.set(symbol, { prices: priceResult.status === 'fulfilled' ? priceResult.value : [], revenues: revenueResult.value, statements: statementResult.value, fetchedAt: Date.now() });
+    } else {
+      $('#watchFundamentalMeta').textContent = `財報資料載入失敗：${revenueResult.status === 'rejected' ? revenueResult.reason?.message || '營收查詢失敗' : statementResult.reason?.message || '季報查詢失敗'}`;
+    }
+    $('#watchLoading').hidden = true;
+  }
+  function renderWatchHistory(observation) {
+    const history = observation ? stockObservationHistory.filter((row) => row.observationId === observation.id).slice(0, 12) : [];
+    $('#watchHistoryCount').textContent = `${history.length} 筆`;
+    $('#watchHistoryList').innerHTML = history.length ? history.map((row) => `<article class="watch-history-item"><div><strong>${escapeHtml(decisionLabel(row.decisionStatus))}</strong><time>${escapeHtml(formatTaipeiTime(row.changedAt))}</time></div><p>${escapeHtml(row.notes || '未填寫決策說明')}</p></article>`).join('') : '<div class="watch-history-empty">儲存決策狀態或說明後，修改紀錄會顯示在這裡。</div>';
+  }
+  function renderWatchNotes(observation) {
+    const notes = observation ? stockObservationNotes.filter((row) => row.observationId === observation.id) : [];
+    $('#watchNotesCount').textContent = `${notes.length} 則`;
+    $('#watchNotesList').innerHTML = notes.length ? notes.map((row) => `<article class="watch-note-item"><div><time>${escapeHtml(formatTaipeiTime(row.createdAt))}</time><button class="text-button" type="button" data-delete-watch-note="${escapeHtml(row.id)}">刪除</button></div><p>${escapeHtml(row.note)}</p></article>`).join('') : '<div class="watch-history-empty">你的觀察重點會逐則顯示在這裡。</div>';
+  }
+  $('#watchStockList').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-watch-symbol]');
+    if (button) selectWatchStock(button.dataset.watchSymbol);
+  });
+  $('#watchNoteDraft').addEventListener('input', (event) => {
+    if (selectedWatchSymbol) watchNoteDrafts.set(selectedWatchSymbol, event.target.value);
+  });
+  $('#refreshWatchData').addEventListener('click', () => { if (selectedWatchSymbol) selectWatchStock(selectedWatchSymbol, true); });
+  $('#watchDecisionStatus').addEventListener('input', (event) => { $('#watchDecisionBadge').textContent = decisionLabel(event.target.value); });
+  $('#watchDecisionForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const entry = getWatchEntries().find((row) => row.symbol === selectedWatchSymbol);
+    if (!entry) return;
+    const previous = stockObservations.find((row) => row.symbol === entry.symbol) || null;
+    const observation = { id: previous?.id, symbol: entry.symbol, name: entry.name, decisionStatus: $('#watchDecisionStatus').value, notes: $('#watchNotes').value.trim() };
+    if (!observation.decisionStatus.trim()) { $('#watchSaveStatus').textContent = '請輸入決策狀態。'; return; }
+    const changed = !previous || previous.decisionStatus !== observation.decisionStatus || previous.notes !== observation.notes || previous.name !== observation.name;
+    if (!changed) { $('#watchSaveStatus').textContent = '內容沒有變更。'; return; }
+    const button = $('#saveWatchDecision'); button.disabled = true;
+    try {
+      const saved = await persistStockObservation(observation);
+      if (previous) stockObservations = stockObservations.map((row) => row.symbol === saved.symbol ? saved : row);
+      else stockObservations.push(saved);
+      const history = await persistStockObservationHistory(saved);
+      stockObservationHistory.unshift(history);
+      saveStockObservations(); saveStockObservationHistory();
+      $('#watchSaveStatus').textContent = `已儲存 · ${formatTaipeiTime(saved.updatedAt)}`;
+      $('#watchDecisionBadge').textContent = decisionLabel(saved.decisionStatus);
+      renderWatchList(); renderWatchHistory(saved);
+    } catch (error) { $('#watchSaveStatus').textContent = `儲存失敗：${error.message || '請稍後重試。'}`; }
+    finally { button.disabled = false; }
+  });
+  $('#watchNoteForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const entry = getWatchEntries().find((row) => row.symbol === selectedWatchSymbol);
+    const note = $('#watchNoteDraft').value.trim();
+    if (!entry || !note) { $('#watchNoteStatus').textContent = note ? '請先選擇個股。' : '請輸入觀察重點。'; return; }
+    const button = $('#addWatchNote'); button.disabled = true; $('#watchNoteStatus').textContent = '儲存中…';
+    try {
+      let observation = stockObservations.find((row) => row.symbol === entry.symbol);
+      if (!observation) {
+        observation = await persistStockObservation({ symbol: entry.symbol, name: entry.name, decisionStatus: entry.holding ? '持有中' : '觀察中', notes: '' });
+        stockObservations.push(observation); saveStockObservations();
+        stockObservationHistory.unshift(await persistStockObservationHistory(observation)); saveStockObservationHistory();
+      }
+      const savedNote = await persistStockObservationNote(observation, note);
+      stockObservationNotes.unshift(savedNote); saveStockObservationNotes();
+      watchNoteDrafts.delete(entry.symbol);
+      $('#watchNoteDraft').value = ''; $('#watchNoteStatus').textContent = '已新增觀察重點。';
+      renderWatchList(); renderWatchHistory(observation); renderWatchNotes(observation);
+    } catch (error) { $('#watchNoteStatus').textContent = `新增失敗：${error.message || '請稍後重試。'}`; }
+    finally { button.disabled = false; }
+  });
+  $('#watchNotesList').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-delete-watch-note]');
+    if (!button) return;
+    const noteId = button.dataset.deleteWatchNote;
+    try {
+      if (cloudClient) {
+        const { error } = await cloudClient.from('stock_observation_notes').delete().eq('id', noteId).eq('user_id', currentUser.id);
+        if (error) throw error;
+      }
+      stockObservationNotes = stockObservationNotes.filter((row) => row.id !== noteId); saveStockObservationNotes();
+      const observation = stockObservations.find((row) => row.symbol === selectedWatchSymbol);
+      renderWatchNotes(observation);
+    } catch (error) { showMessage('刪除失敗', error.message || '請稍後重試。'); }
+  });
+  $('#addWatchStock').addEventListener('click', () => {
+    $('#addWatchStockForm').reset(); $('#watchAddFeedback').textContent = '加入觀察清單不會建立持股或交易紀錄。'; $('#addWatchStockDialog').showModal();
+  });
+  $('#watchAddSymbol').addEventListener('input', (event) => { event.target.value = event.target.value.toUpperCase(); });
+  $('#watchAddSymbol').addEventListener('input', () => { $('#watchAddName').value = ''; });
+  $('#watchAddSymbol').addEventListener('blur', () => {
+    const symbol = $('#watchAddSymbol').value.trim().toUpperCase();
+    if (!symbol) return;
+    $('#watchAddFeedback').textContent = '查詢個股名稱中…';
+    watchLookupPromise = (async () => { try {
+      const info = await lookupStock(symbol);
+      if ($('#watchAddSymbol').value.trim().toUpperCase() !== symbol) return;
+      if (info.type !== '個股') { $('#watchAddFeedback').textContent = '此代號為 ETF，個股觀察清單目前只接受個股。'; return; }
+      $('#watchAddName').value = info.name; $('#watchAddFeedback').textContent = `已查到 ${info.name}，可加入觀察清單。`;
+    } catch (error) { $('#watchAddFeedback').textContent = `${error.message || '查詢失敗'}；可自行填寫名稱。`; } })();
+  });
+  $('#addWatchStockForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await watchLookupPromise;
+    const symbol = $('#watchAddSymbol').value.trim().toUpperCase(), name = $('#watchAddName').value.trim();
+    if (!symbol || !name) { $('#watchAddFeedback').textContent = '請填寫股票代號與名稱。'; return; }
+    if (getWatchEntries().some((row) => row.symbol === symbol)) { $('#watchAddFeedback').textContent = '這檔個股已在觀察清單中。'; return; }
+    const button = $('#watchAddSubmit'); button.disabled = true;
+    try {
+      const saved = await persistStockObservation({ symbol, name, decisionStatus: '觀察中', notes: '' });
+      stockObservations.push(saved); saveStockObservations();
+      const history = await persistStockObservationHistory(saved); stockObservationHistory.unshift(history); saveStockObservationHistory();
+      $('#addWatchStockDialog').close(); renderWatchList(); selectWatchStock(symbol); showToast(`${symbol} 已加入觀察清單`);
+    } catch (error) { $('#watchAddFeedback').textContent = `加入失敗：${error.message || '請稍後重試。'}`; }
+    finally { button.disabled = false; }
+  });
   function renderPlan() {
     const plan = plans['00631L'];
     const totalSold = soldShares('00631L');

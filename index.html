@@ -36,6 +36,7 @@
       <nav class="main-nav" aria-label="主要導覽">
         <a href="#overview" class="nav-item" data-route="overview"><span class="nav-icon">◫</span>投資總覽</a>
         <a href="#holdings" class="nav-item" data-route="holdings"><span class="nav-icon">▤</span>我的持股<span class="nav-count" id="navCount">1</span></a>
+        <a href="#watchlist" class="nav-item" data-route="watchlist"><span class="nav-icon">⌕</span>個股觀察</a>
         <a href="#plans" class="nav-item" data-route="plans"><span class="nav-icon">↗</span>持股計劃</a>
       </nav>
       <div class="sidebar-bottom">
@@ -79,7 +80,7 @@
       <div class="page-view" data-page-view="holdings" hidden>
         <section class="page-heading">
           <div><div class="eyebrow">MY HOLDINGS</div><h1>我的持股</h1><p>管理持股、更新行情，並展開個別成交明細。</p></div>
-          <button class="button primary" id="addHolding"><span class="plus">＋</span>新增持股</button>
+          <div class="page-heading-actions"><a class="button subtle" href="#watchlist">⌕ 個股觀察</a><button class="button primary" id="addHolding"><span class="plus">＋</span>新增持股</button></div>
         </section>
         <section class="holdings-section" id="holdings-list">
           <div class="section-heading"><div><h2>持股清單 <span class="count-pill" id="holdingCount">1</span></h2><p>依資產列出部位與目前損益。</p></div><div class="heading-actions"><button class="button subtle" id="refreshQuotes">↻ 更新行情</button><button class="button subtle" id="exportCsv"><span>⇩</span>匯出 CSV</button></div></div>
@@ -112,6 +113,42 @@
           <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股；此版可記錄買進與配股，尚未提供賣出記帳。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
         </section>
       </div>
+
+      <div class="page-view" data-page-view="watchlist" hidden>
+        <section class="page-heading">
+          <div><div class="eyebrow">STOCK WATCH</div><h1>個股觀察</h1><p>查看價格、財報、持有成本，並整理自己的觀察與決策紀錄。</p></div>
+          <button class="button primary" id="addWatchStock"><span class="plus">＋</span>加入觀察個股</button>
+        </section>
+        <section class="watch-workspace">
+          <aside class="watch-list-panel">
+            <div class="watch-list-heading"><strong>觀察清單</strong><span id="watchStockCount">0 檔</span></div>
+            <div class="watch-stock-list" id="watchStockList"></div>
+            <div class="watch-list-empty" id="watchListEmpty" hidden>目前沒有觀察個股。<br>可從持股自動帶入，或自行加入。</div>
+          </aside>
+          <div class="watch-detail" id="watchDetail">
+            <div class="watch-empty-state" id="watchEmptyState"><div class="empty-icon">⌕</div><strong>選擇一檔個股開始觀察</strong><span>持股中的個股會自動出現在清單。</span></div>
+            <div id="watchDetailContent" hidden>
+              <div class="watch-stock-header"><div><div class="eyebrow" id="watchSymbol">—</div><h2 id="watchName">—</h2><div class="watch-updated" id="watchQuoteMeta">等待行情資料</div></div><div class="watch-header-actions"><span class="decision-badge" id="watchDecisionBadge">觀察中</span><button class="button subtle" id="refreshWatchData">↻ 更新資料</button></div></div>
+              <div class="watch-section-heading"><h3>行情觀察</h3><span>資料日期與更新時間以來源為準</span></div>
+              <div class="watch-metric-grid" id="watchQuoteMetrics"><article class="watch-metric-card"><small>最新收盤價</small><strong data-metric="price">—</strong><span data-metric="daily">—</span></article><article class="watch-metric-card"><small>成交量</small><strong data-metric="volume">—</strong><span>股價日成交資訊</span></article><article class="watch-metric-card"><small>近 5 個交易日</small><strong data-metric="change5">—</strong><span>收盤價變化</span></article><article class="watch-metric-card"><small>近 20 個交易日</small><strong data-metric="change20">—</strong><span>收盤價變化</span></article></div>
+              <div class="watch-low-card" id="watchLowStatus"><span>近 20 個有價格交易日低點（不含當日）</span><strong data-metric="lowBreak">等待行情資料</strong><small>比較原始日收盤價；除權息可能影響區間比較。</small></div>
+              <div class="watch-section-heading"><h3>基本面數據</h3><span id="watchFundamentalMeta">等待財報資料</span></div>
+              <div class="watch-metric-grid fundamentals-grid"><article class="watch-metric-card"><small>最近月份營收年增率</small><strong data-metric="revenueYoy">—</strong><span data-metric="revenuePeriod">—</span></article><article class="watch-metric-card"><small>最近一季 EPS</small><strong data-metric="eps">—</strong><span data-metric="epsPeriod">—</span></article><article class="watch-metric-card"><small>最近一季毛利率</small><strong data-metric="grossMargin">—</strong><span data-metric="grossMarginPeriod">—</span></article></div>
+              <div class="watch-section-heading"><h3>我的持有部位</h3><a class="text-button" href="#holdings">前往持股清單</a></div>
+              <div class="watch-position-grid"><article><small>持有股數</small><strong id="watchShares">尚未持有</strong></article><article><small>平均成本</small><strong id="watchAverageCost">—</strong></article><article><small>未實現損益</small><strong id="watchPnl">—</strong></article></div>
+              <form class="watch-decision-form" id="watchDecisionForm">
+                <div class="watch-section-heading"><div><h3>我的觀察與決策</h3><p>內容由你提供與維護，系統不會替你判斷或下單。</p></div></div>
+                <div class="watch-edit-grid"><label class="field"><span>決策狀態（可自訂）</span><input id="watchDecisionStatus" list="watchDecisionSuggestions" maxlength="40" placeholder="輸入你的決策狀態"><datalist id="watchDecisionSuggestions"><option value="觀察中"><option value="持有中"><option value="暫緩評估"><option value="已結束"></datalist></label><label class="field watch-notes-field"><span>決策說明 <small>選填</small></span><textarea id="watchNotes" rows="3" maxlength="4000" placeholder="自行補充這次決策的原因或待辦"></textarea></label></div>
+                <div class="watch-save-row"><span id="watchSaveStatus" role="status"></span><button class="button primary" type="submit" id="saveWatchDecision">儲存觀察紀錄</button></div>
+              </form>
+              <section class="watch-notes-section"><div class="watch-section-heading"><div><h3>基本面觀察重點</h3><p>由你自行新增，每則會個別保存。</p></div><span id="watchNotesCount">0 則</span></div><form class="watch-note-form" id="watchNoteForm"><label class="field"><span>新增觀察重點</span><textarea id="watchNoteDraft" rows="3" maxlength="4000" placeholder="輸入你提供的觀察內容、風險或待追蹤事項"></textarea></label><div class="watch-save-row"><span id="watchNoteStatus" role="status"></span><button class="button subtle" type="submit" id="addWatchNote">＋ 新增觀察重點</button></div></form><div id="watchNotesList" class="watch-note-list"></div></section>
+              <section class="watch-history-section"><div class="watch-section-heading"><h3>決策修改紀錄</h3><span id="watchHistoryCount">0 筆</span></div><div id="watchHistoryList" class="watch-history-list"></div></section>
+              <div class="watch-source-note">行情與財報資料來源：<a href="https://finmind.github.io/" target="_blank" rel="noopener noreferrer">FinMind</a>。行情為每日資料，非盤中即時報價；資料不足時會顯示「—」。</div>
+            </div>
+            <div class="watch-loading" id="watchLoading" hidden>載入個股資料中…</div>
+          </div>
+        </section>
+      </div>
       <footer class="page-footer"><span>Orbitfolio <span>·</span> 你的投資，清晰管理。</span><span>資料儲存在你的瀏覽器中</span></footer>
     </main>
   </div>
@@ -133,6 +170,15 @@
       </div>
       <div class="modal-info">名稱與最近收盤價會依代號查詢 FinMind；資料可能延遲，盤中不提供即時成交價。查詢失敗時可手動輸入名稱，系統不會填入假價格。</div>
       <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button primary">儲存持股</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="addWatchStockDialog" class="modal">
+    <form id="addWatchStockForm" novalidate>
+      <div class="modal-header"><div><div class="eyebrow">ADD TO WATCHLIST</div><h2>加入觀察個股</h2></div><button type="button" class="close-button" data-close aria-label="關閉">×</button></div>
+      <div class="form-grid"><label class="field"><span>股票代號 <b>*</b></span><input id="watchAddSymbol" required maxlength="20" autocomplete="off" placeholder="例如 2330"></label><label class="field"><span>股票名稱</span><input id="watchAddName" maxlength="60" placeholder="輸入代號後查詢或自行填寫"></label></div>
+      <div id="watchAddFeedback" class="modal-info" role="status">加入觀察清單不會建立持股或交易紀錄。</div>
+      <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button primary" id="watchAddSubmit">加入觀察</button></div>
     </form>
   </dialog>
 
