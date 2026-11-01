@@ -43,7 +43,6 @@
   const watchDataCache = new Map();
   let watchRequestSequence = 0;
   const SIDEBAR_COLLAPSED_KEY = 'orbitfolio.sidebarCollapsed.v1';
-  const FONT_SCALE_KEY = 'orbitfolio.fontScale.v1';
   if (!Array.isArray(holdings)) { holdings = DEFAULT_HOLDINGS; saveHoldings(); }
   if (!Array.isArray(trades)) { trades = []; saveTrades(); }
   if (!Array.isArray(stockObservations)) { stockObservations = []; saveStockObservations(); }
@@ -52,27 +51,18 @@
   migrateLegacyPositionsLocally();
   if (!plans || !plans['00631L']) { plans = { ...(plans || {}), '00631L': { totalShares: 1200, batches: [400, 400, 400] } }; savePlans(); }
 
-  function setFontScale(value) {
-    const scale = Math.max(0.9, Math.min(1.5, Math.round(value * 100) / 100));
-    document.documentElement.style.setProperty('--font-scale', scale);
-    $('#fontScaleLabel').textContent = `${Math.round(scale * 100)}%`;
-    localStorage.setItem(FONT_SCALE_KEY, String(scale));
-  }
   function setSidebarCollapsed(collapsed) {
     $('#appShell').classList.toggle('is-sidebar-collapsed', collapsed);
-    const button = $('#sidebarCollapseToggle');
-    button.setAttribute('aria-label', collapsed ? '展開左側導覽' : '收合左側導覽');
-    button.title = collapsed ? '展開左側導覽' : '收合左側導覽';
-    button.querySelector('[aria-hidden="true"]').textContent = collapsed ? '›' : '‹';
-    button.querySelector('.sidebar-toggle-label').textContent = collapsed ? '展開導覽' : '收合導覽';
+    const brand = $('#sidebarBrandToggle');
+    brand.setAttribute('aria-label', collapsed ? '展開左側導覽' : '收合左側導覽');
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
   }
-  const savedFontScale = Number(localStorage.getItem(FONT_SCALE_KEY));
-  setFontScale(Number.isFinite(savedFontScale) && savedFontScale > 0 ? savedFontScale : 1.15);
+  document.documentElement.style.setProperty('--font-scale', 1.15);
   setSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true');
-  $('#fontSmaller').addEventListener('click', () => setFontScale(Number($('#fontScaleLabel').textContent.replace('%', '')) / 100 - 0.05));
-  $('#fontLarger').addEventListener('click', () => setFontScale(Number($('#fontScaleLabel').textContent.replace('%', '')) / 100 + 0.05));
-  $('#sidebarCollapseToggle').addEventListener('click', () => setSidebarCollapsed(!$('#appShell').classList.contains('is-sidebar-collapsed')));
+  $('#sidebarBrandToggle').addEventListener('click', (event) => {
+    event.preventDefault();
+    setSidebarCollapsed(!$('#appShell').classList.contains('is-sidebar-collapsed'));
+  });
 
   function readJson(key, fallback) { try { const value = localStorage.getItem(key); return value === null ? fallback : JSON.parse(value); } catch { return fallback; } }
   function saveHoldings() { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(holdings)); }

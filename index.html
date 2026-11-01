@@ -29,10 +29,9 @@
   </section>
   <div class="app-shell" id="appShell">
     <aside class="sidebar">
-      <a class="brand" href="#overview" aria-label="投資總覽">
+      <a class="brand" href="#overview" id="sidebarBrandToggle" aria-label="收合左側導覽" title="收合／展開左側導覽">
         <span class="brand-mark">O</span><span>orbit<span class="brand-light">folio</span></span>
       </a>
-      <button class="sidebar-collapse-toggle" id="sidebarCollapseToggle" type="button" aria-label="收合左側導覽" title="收合左側導覽"><span aria-hidden="true">‹</span><span class="sidebar-toggle-label">收合導覽</span></button>
       <div class="workspace-label">個人工作區</div>
       <nav class="main-nav" aria-label="主要導覽">
         <a href="#overview" class="nav-item" data-route="overview" aria-label="投資總覽" title="投資總覽"><span class="nav-icon">◫</span><span class="nav-label">投資總覽</span></a>
@@ -41,7 +40,6 @@
         <a href="#plans" class="nav-item" data-route="plans" aria-label="持股計劃" title="持股計劃"><span class="nav-icon">↗</span><span class="nav-label">持股計劃</span></a>
       </nav>
       <div class="sidebar-bottom">
-        <div class="sidebar-preferences" aria-label="顯示設定"><span>字體大小</span><div><button type="button" id="fontSmaller" aria-label="縮小字體">A−</button><output id="fontScaleLabel">115%</output><button type="button" id="fontLarger" aria-label="放大字體">A＋</button></div></div>
         <div class="sync-card"><span class="sync-dot" id="syncDot"></span><div><strong id="syncTitle">單一裝置模式</strong><small id="syncDetail">資料保存在此瀏覽器</small></div></div>
         <div class="profile"><div class="avatar">S</div><div><strong>我的投資組合</strong><small>個人帳戶</small></div></div>
       </div>
