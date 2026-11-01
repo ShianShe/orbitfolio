@@ -331,7 +331,7 @@
       const shares = getDisplayShares(item), cost = getDisplayCost(item), totalCost = shares * cost;
       const price = item.price === null || item.price === '' ? null : Number(item.price);
       const market = price === null ? null : shares * price;
-      const values = { asset: `${item.name} ${item.symbol}`.toLocaleLowerCase(), type: item.type, shares, cost, totalCost, price, market, pnl: market === null ? null : market - totalCost };
+      const values = { asset: String(item.symbol).toLocaleUpperCase(), type: item.type, shares, cost, totalCost, price, market, pnl: market === null ? null : market - totalCost };
       return values[holdingSort.key];
     };
     filtered.sort((a, b) => {
