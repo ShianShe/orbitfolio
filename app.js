@@ -16,6 +16,8 @@
   let currentUser = null;
   const $ = (selector) => document.querySelector(selector);
   const holdingsBody = $('#holdingsBody');
+  const selectedHoldings = new Set();
+  let holdingSort = { key: 'asset', direction: 1 };
   const holdingDialog = $('#holdingDialog');
   const holdingForm = $('#holdingForm');
   const toast = $('#toast');
@@ -325,6 +327,19 @@
     const query = $('#searchInput').value.trim().toLocaleLowerCase();
     const filter = $('#typeFilter').value;
     const filtered = holdings.filter((item) => (filter === 'all' || item.type === filter) && `${item.symbol} ${item.name}`.toLocaleLowerCase().includes(query));
+    const sortValue = (item) => {
+      const shares = getDisplayShares(item), cost = getDisplayCost(item), totalCost = shares * cost;
+      const price = item.price === null || item.price === '' ? null : Number(item.price);
+      const market = price === null ? null : shares * price;
+      const values = { asset: `${item.name} ${item.symbol}`.toLocaleLowerCase(), type: item.type, shares, cost, totalCost, price, market, pnl: market === null ? null : market - totalCost };
+      return values[holdingSort.key];
+    };
+    filtered.sort((a, b) => {
+      const av = sortValue(a), bv = sortValue(b);
+      if (av === null || av === undefined) return bv === null || bv === undefined ? 0 : 1;
+      if (bv === null || bv === undefined) return -1;
+      return (typeof av === 'string' ? av.localeCompare(bv, 'zh-Hant') : av - bv) * holdingSort.direction;
+    });
     holdingsBody.innerHTML = filtered.map((item) => {
       const shares = getDisplayShares(item);
       const cost = getDisplayCost(item);
@@ -338,7 +353,7 @@
       const detailCount = itemTrades.length;
       const detailsOpen = expandedTradeDetails.has(item.id);
       return `<tr class="holding-summary-row" data-holding-id="${escapeHtml(item.id)}" tabindex="0" aria-expanded="${detailsOpen}" aria-label="${escapeHtml(item.symbol)} 持股摘要，按 Enter 展開或收合交易明細">
-        <td class="check-cell"><input type="checkbox" aria-label="選取 ${escapeHtml(item.symbol)}" disabled></td>
+        <td class="check-cell"><input class="holding-select" type="checkbox" data-id="${escapeHtml(item.id)}" aria-label="選取 ${escapeHtml(item.symbol)}" ${selectedHoldings.has(item.id) ? 'checked' : ''}></td>
         <td><div class="asset-cell"><div class="ticker-icon ${item.type === 'ETF' ? 'etf' : 'stock'}">${icon}</div><div class="asset-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}${item.purchaseDate ? ` · ${escapeHtml(item.purchaseDate)}` : ''}</small></div></div></td>
         <td><span class="type-badge">${escapeHtml(item.type)}</span></td>
         <td class="numeric amount">${number(shares)}</td><td class="numeric amount">${unitMoney(cost)}</td><td class="numeric amount">${money(totalCost)}</td>
@@ -352,6 +367,16 @@
     $('#navCount').textContent = holdings.length;
     $('#assetCount').textContent = `${holdings.length} 項資產`;
     $('#tableSummary').textContent = `顯示 ${filtered.length} 項資產`;
+    const selectAll = $('#selectAllHoldings');
+    const selectedVisible = filtered.filter((item) => selectedHoldings.has(item.id)).length;
+    selectAll.checked = filtered.length > 0 && selectedVisible === filtered.length;
+    selectAll.indeterminate = selectedVisible > 0 && selectedVisible < filtered.length;
+    selectAll.disabled = filtered.length === 0;
+    document.querySelectorAll('.sort-button').forEach((button) => {
+      const active = button.dataset.sort === holdingSort.key;
+      button.setAttribute('aria-sort', active ? (holdingSort.direction === 1 ? 'ascending' : 'descending') : 'none');
+      button.querySelector('.sort').textContent = active ? (holdingSort.direction === 1 ? '↑' : '↓') : '↕';
+    });
     const totalCost = holdings.reduce((sum, item) => sum + getDisplayShares(item) * getDisplayCost(item), 0);
     const priced = holdings.filter((item) => item.price !== null && item.price !== '' && Number.isFinite(Number(item.price)));
     const allPriced = holdings.length > 0 && priced.length === holdings.length;
@@ -544,6 +569,12 @@
     const item = holdings.find((holding) => holding.id === row.dataset.holdingId);
     if (item) toggleTradeDetails(item);
   });
+  holdingsBody.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('.holding-select');
+    if (!checkbox) return;
+    if (checkbox.checked) selectedHoldings.add(checkbox.dataset.id); else selectedHoldings.delete(checkbox.dataset.id);
+    render();
+  });
   function openTradeEditor(trade) {
     const holding = holdings.find((item) => item.symbol === trade.symbol);
     if (!holding) return;
@@ -615,6 +646,18 @@
   function showMessage(title, message) { $('#messageTitle').textContent = title; $('#messageText').textContent = message; $('#messageDialog').showModal(); }
   $('#searchInput').addEventListener('input', render);
   $('#typeFilter').addEventListener('change', render);
+  $('#selectAllHoldings').addEventListener('change', (event) => {
+    const query = $('#searchInput').value.trim().toLocaleLowerCase(), filter = $('#typeFilter').value;
+    holdings.filter((item) => (filter === 'all' || item.type === filter) && `${item.symbol} ${item.name}`.toLocaleLowerCase().includes(query)).forEach((item) => {
+      if (event.target.checked) selectedHoldings.add(item.id); else selectedHoldings.delete(item.id);
+    });
+    render();
+  });
+  document.querySelectorAll('.sort-button').forEach((button) => button.addEventListener('click', () => {
+    const key = button.dataset.sort;
+    holdingSort = { key, direction: holdingSort.key === key ? -holdingSort.direction : 1 };
+    render();
+  }));
   document.addEventListener('keydown', (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#searchInput').focus(); } });
   document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => button.closest('dialog').close()));
   document.querySelectorAll('dialog').forEach((dialog) => dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); }));
