@@ -100,7 +100,7 @@
   }
   async function persistTrade(item, trade) {
     if (!cloudClient) return { ...trade, id: trade.id || `trade-${Date.now()}`, holdingId: item.id };
-    if (!currentUser) throw new Error('請先登入再新增買進紀錄。');
+    if (!currentUser) throw new Error('請先登入再新增持股紀錄。');
     const { data, error } = await cloudClient.from('trades').insert({
       user_id: currentUser.id,
       holding_id: item.id,
@@ -303,25 +303,27 @@
       const date = trade.tradedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(trade.tradedAt)) : '—';
       const totalCost = Number(trade.shares) * Number(trade.price) + Number(trade.fees || 0);
       const editButton = `<button class="trade-edit-button" type="button" data-action="edit-trade" data-id="${escapeHtml(trade.id)}">修改</button>`;
-      return `<tr><td>${date}</td><td>${trade.side === 'sell' ? '賣出' : '買進'}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${unitMoney(trade.price)}</td><td class="numeric">${trade.feesUnknown ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td><td>${editButton}</td></tr>`;
+      const tradeLabel = trade.side === 'stock_dividend' ? '配股' : trade.side === 'sell' ? '賣出' : '買進';
+      return `<tr><td>${date}</td><td>${tradeLabel}</td><td class="numeric">${number(trade.shares)} 股</td><td class="numeric">${trade.side === 'stock_dividend' ? '—' : unitMoney(trade.price)}</td><td class="numeric">${trade.side === 'stock_dividend' || trade.feesUnknown ? '—' : money(Number(trade.fees || 0))}</td><td class="numeric">${money(totalCost)}</td><td>${escapeHtml(trade.notes || '—')}</td><td>${editButton}</td></tr>`;
     }).join('');
-    return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 交易明細</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>方向</th><th class="numeric">股數</th><th class="numeric">成交單價</th><th class="numeric">手續費</th><th class="numeric">本次總成本</th><th>備註</th><th>操作</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
+    return `<div class="transaction-detail"><div class="transaction-detail-heading"><strong>${escapeHtml(item.symbol)} ${escapeHtml(item.name)} · 持股紀錄</strong><span>${rows.length} 筆</span></div><div class="transaction-detail-scroll"><table><thead><tr><th>日期</th><th>類型</th><th class="numeric">股數</th><th class="numeric">成交單價</th><th class="numeric">手續費</th><th class="numeric">本次總成本</th><th>備註</th><th>操作</th></tr></thead><tbody>${details}</tbody></table></div></div>`;
   }
   function soldShares(symbol) { return tradesFor(symbol).filter((trade) => trade.side === 'sell').reduce((sum, trade) => sum + Number(trade.shares || 0), 0); }
+  function isShareAcquisition(trade) { return trade.side === 'buy' || trade.side === 'stock_dividend'; }
   function getDisplayCost(item) {
     const rows = tradesFor(item.symbol);
     if (!rows.length) return Number(item.cost) || 0;
     const buys = rows.filter((trade) => trade.side === 'buy');
-    const boughtShares = buys.reduce((sum, trade) => sum + Number(trade.shares || 0), 0);
+    const acquiredShares = rows.filter(isShareAcquisition).reduce((sum, trade) => sum + Number(trade.shares || 0), 0);
     const buyCost = buys.reduce((sum, trade) => sum + Number(trade.shares || 0) * Number(trade.price || 0) + Number(trade.fees || 0), 0);
-    return boughtShares > 0 ? buyCost / boughtShares : Number(item.cost) || 0;
+    return acquiredShares > 0 ? buyCost / acquiredShares : Number(item.cost) || 0;
   }
   function unitMoney(value) { return `$${Number(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
   function getDisplayShares(item) {
     const rows = tradesFor(item.symbol);
     if (!rows.length) return Number(item.shares) || 0;
-    const buys = rows.filter((trade) => trade.side === 'buy').reduce((sum, trade) => sum + Number(trade.shares || 0), 0);
-    return Math.max(0, buys - soldShares(item.symbol));
+    const acquired = rows.filter(isShareAcquisition).reduce((sum, trade) => sum + Number(trade.shares || 0), 0);
+    return Math.max(0, acquired - soldShares(item.symbol));
   }
   function render() {
     const query = $('#searchInput').value.trim().toLocaleLowerCase();
@@ -358,8 +360,8 @@
         <td><span class="type-badge">${escapeHtml(item.type)}</span></td>
         <td class="numeric amount">${number(shares)}</td><td class="numeric amount">${unitMoney(cost)}</td><td class="numeric amount">${money(totalCost)}</td>
         <td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? `${money(price)}<small class="quote-meta">${escapeHtml(quoteDescription(item))}</small>` : '尚無行情'}</td><td class="numeric ${hasPrice ? 'amount' : 'na'}">${hasPrice ? wholeMoney(market) : '—'}</td>
-        <td class="numeric ${hasPrice ? (pnl >= 0 ? 'positive' : 'negative') : 'na'}">${hasPrice ? `${pnl >= 0 ? '+' : ''}${wholeMoney(pnl)}<small class="return"> ${pnl >= 0 ? '+' : ''}${(pnl / totalCost * 100).toFixed(2)}%</small>` : '—'}</td>
-        <td><div class="row-actions"><button data-action="buy" data-id="${escapeHtml(item.id)}">新增買進</button><button data-action="details" data-id="${escapeHtml(item.id)}" aria-expanded="${detailsOpen}">交易明細${detailCount ? ` ${detailCount}` : ''}</button><button data-action="edit" data-id="${escapeHtml(item.id)}">編輯</button><button data-action="delete" data-id="${escapeHtml(item.id)}">刪除</button></div></td>
+        <td class="numeric ${hasPrice ? (pnl >= 0 ? 'positive' : 'negative') : 'na'}">${hasPrice ? `${pnl >= 0 ? '+' : ''}${wholeMoney(pnl)}<small class="return"> ${totalCost > 0 ? `${pnl >= 0 ? '+' : ''}${(pnl / totalCost * 100).toFixed(2)}%` : '報酬率無法計算'}</small>` : '—'}</td>
+        <td><div class="row-actions"><button data-action="buy" data-id="${escapeHtml(item.id)}">新增紀錄</button><button data-action="details" data-id="${escapeHtml(item.id)}" aria-expanded="${detailsOpen}">交易明細${detailCount ? ` ${detailCount}` : ''}</button><button data-action="edit" data-id="${escapeHtml(item.id)}">編輯</button><button data-action="delete" data-id="${escapeHtml(item.id)}">刪除</button></div></td>
       </tr>${detailsOpen ? `<tr class="transaction-detail-row"><td colspan="10">${renderTradeDetails(item)}</td></tr>` : ''}`;
     }).join('');
     $('#emptyState').hidden = filtered.length > 0;
@@ -415,11 +417,15 @@
   function openEditor(item = null) {
     resetForm();
     $('#initialFees').value = ''; $('#initialFeeField').hidden = Boolean(item);
+    $('#initialAcquisitionField').hidden = Boolean(item);
+    $('#initialAcquisitionType').value = 'buy';
+    updateInitialAcquisitionFields();
     if (!item) $('#purchaseDate').value = taipeiDateString();
     $('#initialFeeHint').hidden = Boolean(item);
     $('#costFieldLabel').textContent = item ? '平均成本' : '買進單價';
     if (item) {
       $('#dialogTitle').textContent = '編輯持股'; $('#holdingId').value = item.id;
+      updateInitialAcquisitionFields();
       $('#symbol').value = item.symbol; $('#name').value = item.name; $('#assetType').value = item.type;
       $('#shares').value = getDisplayShares(item);
       $('#cost').value = getDisplayCost(item).toFixed(2); $('#purchaseDate').value = item.purchaseDate || ''; $('#notes').value = item.notes || '';
@@ -429,6 +435,16 @@
     } else { $('#costLockHint').hidden = true; $('#shares').disabled = false; $('#quoteLookupStatus').textContent = '輸入代號後自動帶入名稱及最近收盤價。'; }
     holdingDialog.showModal();
   }
+  function updateInitialAcquisitionFields() {
+    const stockDividend = $('#initialAcquisitionType').value === 'stock_dividend';
+    $('#initialCostField').hidden = stockDividend;
+    $('#initialFeeField').hidden = stockDividend || Boolean($('#holdingId').value);
+    $('#cost').required = !stockDividend;
+    $('#cost').setCustomValidity('');
+    if (stockDividend) { $('#initialFees').value = ''; $('#initialFees').setCustomValidity(''); }
+    $('#purchaseDateLabel').innerHTML = `${stockDividend ? '配股日期' : '買進日期'} <small>選填</small>`;
+  }
+  $('#initialAcquisitionType').addEventListener('change', updateInitialAcquisitionFields);
   $('#symbol').addEventListener('input', () => {
     const symbolInput = $('#symbol');
     const cursor = symbolInput.selectionStart;
@@ -470,7 +486,8 @@
     if (!symbol) { symbolError.textContent = '請輸入股票代號。'; valid = false; }
     if (!name) { nameError.textContent = '請輸入股票名稱。'; valid = false; }
     if (!Number.isFinite(shares) || shares <= 0) { $('#shares').setCustomValidity('股數必須大於 0'); $('#shares').reportValidity(); valid = false; } else $('#shares').setCustomValidity('');
-    if (!Number.isFinite(cost) || cost <= 0) { $('#cost').setCustomValidity('平均成本必須大於 0'); $('#cost').reportValidity(); valid = false; } else $('#cost').setCustomValidity('');
+    const stockDividend = !$('#holdingId').value && $('#initialAcquisitionType').value === 'stock_dividend';
+    if (!stockDividend && (!Number.isFinite(cost) || cost <= 0)) { $('#cost').setCustomValidity('買進單價必須大於 0'); $('#cost').reportValidity(); valid = false; } else $('#cost').setCustomValidity('');
     const initialFees = Number($('#initialFees').value || 0);
     if (!Number.isFinite(initialFees) || initialFees < 0) { $('#initialFees').setCustomValidity('手續費不可小於 0'); $('#initialFees').reportValidity(); valid = false; } else $('#initialFees').setCustomValidity('');
     const existing = holdings.find((item) => item.symbol.toUpperCase() === symbol.toUpperCase() && item.id !== $('#holdingId').value);
@@ -488,21 +505,23 @@
     const fetchedQuote = quoteCache.get(normalizedSymbol);
     const inputShares = Number($('#shares').value);
     const inputCost = Number($('#cost').value);
+    const initialSide = $('#initialAcquisitionType').value;
+    const stockDividend = !previous && initialSide === 'stock_dividend';
     const initialFees = previous ? 0 : Number($('#initialFees').value || 0);
     const positionDate = $('#purchaseDate').value || (!previous ? taipeiDateString() : '');
     const hasLedger = previous && tradesFor(previous.symbol).length > 0;
-    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: hasLedger ? previous.shares : inputShares, cost: hasLedger ? previous.cost : inputCost, purchaseDate: positionDate, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
+    const item = { id: id || `holding-${Date.now()}`, symbol: normalizedSymbol, name: $('#name').value.trim(), type: $('#assetType').value, shares: hasLedger ? previous.shares : inputShares, cost: hasLedger ? previous.cost : stockDividend ? 0 : inputCost, purchaseDate: positionDate, notes: $('#notes').value.trim(), price: sameSymbol ? (fetchedQuote?.price ?? previous.price) : (fetchedQuote?.price ?? null), quoteDate: sameSymbol ? (fetchedQuote?.quoteDate ?? previous.quoteDate) : (fetchedQuote?.quoteDate ?? ''), quoteUpdatedAt: sameSymbol ? (fetchedQuote?.quoteUpdatedAt ?? previous.quoteUpdatedAt) : (fetchedQuote?.quoteUpdatedAt ?? ''), quoteSource: sameSymbol ? (fetchedQuote?.quoteSource ?? previous.quoteSource) : (fetchedQuote?.quoteSource ?? ''), createdAt: previous?.createdAt || new Date().toISOString() };
     const saveButton = holdingForm.querySelector('[type="submit"]'); saveButton.disabled = true;
     try {
       const saved = await persistHolding(item);
       if (previous) {
         holdings = holdings.map((row) => row.id === id ? saved : row);
       } else {
-        const feesUnknown = $('#initialFees').value.trim() === '';
-        const firstTrade = await persistTrade(saved, { symbol: saved.symbol, side: 'buy', shares: inputShares, price: inputCost, fees: feesUnknown ? null : initialFees, feesUnknown, isMigratedPosition: true, tradedAt: new Date(`${positionDate}T12:00:00+08:00`).toISOString(), notes: '' });
+        const feesUnknown = stockDividend ? false : $('#initialFees').value.trim() === '';
+        const firstTrade = await persistTrade(saved, { symbol: saved.symbol, side: stockDividend ? 'stock_dividend' : 'buy', shares: inputShares, price: stockDividend ? 0 : inputCost, fees: stockDividend ? 0 : feesUnknown ? null : initialFees, feesUnknown, isMigratedPosition: !stockDividend, tradedAt: new Date(`${positionDate}T12:00:00+08:00`).toISOString(), notes: '' });
         holdings.push(saved); trades.push(firstTrade); saveTrades();
       }
-      saveHoldings(); holdingDialog.close(); render(); showToast(cloudClient ? '持股與首筆買進紀錄已同步' : previous ? '持股資料已更新' : '持股與首筆買進紀錄已新增');
+      saveHoldings(); holdingDialog.close(); render(); showToast(previous ? '持股資料已更新' : stockDividend ? '持股與配股紀錄已新增' : '持股與首筆買進紀錄已新增');
     } catch (error) { showMessage('儲存失敗', error.message || '請確認網路與雲端資料庫設定。'); }
     finally { saveButton.disabled = false; }
   });
@@ -516,9 +535,28 @@
     $('#buyFees').value = '';
     $('#buyDate').value = taipeiDateString();
     $('#buyNotes').value = '';
+    $('#buyTransactionType').value = 'buy';
+    updateBuyTransactionFields();
     updateBuyTotalPreview();
     $('#buyDialog').showModal();
   }
+  function updateBuyTransactionFields() {
+    const stockDividend = $('#buyTransactionType').value === 'stock_dividend';
+    $('#buyDialogTitle').textContent = stockDividend ? '新增配股紀錄' : '新增買進紀錄';
+    $('#buySharesLabel').innerHTML = `${stockDividend ? '配股' : '買進'}股數 <b>*</b>`;
+    $('#buyDateLabel').innerHTML = `${stockDividend ? '配股日期' : '成交日期'} <b>*</b>`;
+    $('#buyPrice').closest('.field').hidden = stockDividend;
+    $('#buyPrice').required = !stockDividend;
+    $('#buyFees').closest('.field').hidden = stockDividend;
+    $('#buyTotalPreview').closest('.field').hidden = stockDividend;
+    $('#buyDialogInfo').textContent = stockDividend
+      ? '配股不需輸入單價或手續費，會增加持有股數並以零成本納入均價計算。'
+      : '每筆成交會獨立保存。輸入實際成交單價及券商顯示的手續費，系統以「股數 × 單價 + 手續費」計入總成本與加權均價；不會估算手續費。';
+    $('#buySaveContinue').hidden = stockDividend;
+    $('#buySubmit').textContent = stockDividend ? '確認配股' : '確認買進';
+    updateBuyTotalPreview();
+  }
+  $('#buyTransactionType').addEventListener('change', updateBuyTransactionFields);
   function updateBuyTotalPreview() {
     const shares = Number($('#buyShares').value);
     const price = Number($('#buyPrice').value);
@@ -533,14 +571,15 @@
     if (!item) return;
     const shares = Number($('#buyShares').value);
     const price = Number($('#buyPrice').value);
+    const stockDividend = $('#buyTransactionType').value === 'stock_dividend';
     const feesUnknown = $('#buyFees').value.trim() === '';
     const fees = Number($('#buyFees').value || 0);
-    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
-      showMessage('資料需確認', '股數與成交單價必須大於 0，手續費不可小於 0。'); return;
+    if (!Number.isFinite(shares) || shares <= 0 || (!stockDividend && (!Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0))) {
+      showMessage('資料需確認', stockDividend ? '配股股數必須大於 0。' : '股數與成交單價必須大於 0，手續費不可小於 0。'); return;
     }
     const date = $('#buyDate').value;
     if (!date || Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())) { showMessage('資料需確認', '請選擇有效的成交日期。'); return; }
-    const trade = { symbol: item.symbol, side: 'buy', shares, price, fees: feesUnknown ? null : fees, feesUnknown, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
+    const trade = { symbol: item.symbol, side: stockDividend ? 'stock_dividend' : 'buy', shares, price: stockDividend ? 0 : price, fees: stockDividend ? 0 : feesUnknown ? null : fees, feesUnknown: stockDividend ? false : feesUnknown, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#buyNotes').value.trim() };
     const keepAdding = event.submitter?.id === 'buySaveContinue';
     const buttons = [$('#buySubmit'), $('#buySaveContinue')]; buttons.forEach((button) => { button.disabled = true; });
     try {
@@ -552,9 +591,9 @@
         showToast(`本筆已儲存；目前持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
       } else {
         $('#buyDialog').close();
-        showToast(`買進紀錄已新增，持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
+        showToast(`${stockDividend ? '配股' : '買進'}紀錄已新增，持有 ${number(getDisplayShares(item))} 股，均價 ${unitMoney(getDisplayCost(item))}`);
       }
-    } catch (error) { showMessage('買進紀錄儲存失敗', error.message || '請確認雲端連線後重試。'); }
+    } catch (error) { showMessage('持股紀錄儲存失敗', error.message || '請確認雲端連線後重試。'); }
     finally { buttons.forEach((button) => { button.disabled = false; }); }
   });
   function toggleTradeDetails(item) {
@@ -579,10 +618,15 @@
     const holding = holdings.find((item) => item.symbol === trade.symbol);
     if (!holding) return;
     $('#tradeEditId').value = trade.id;
-    $('#tradeEditSymbol').textContent = `${holding.symbol} ${holding.name} · ${trade.side === 'buy' ? '買進' : '賣出'}`;
+    $('#tradeEditDialog').querySelector('h2').textContent = trade.side === 'stock_dividend' ? '修改配股紀錄' : '修改成交紀錄';
+    const stockDividend = trade.side === 'stock_dividend';
+    $('#tradeEditSymbol').textContent = `${holding.symbol} ${holding.name} · ${stockDividend ? '配股' : trade.side === 'buy' ? '買進' : '賣出'}`;
     $('#tradeEditShares').value = trade.shares;
     $('#tradeEditPrice').value = trade.price;
     $('#tradeEditFees').value = trade.feesUnknown ? '' : trade.fees ?? 0;
+    $('#tradeEditPrice').closest('.field').hidden = stockDividend;
+    $('#tradeEditPrice').required = !stockDividend;
+    $('#tradeEditFees').closest('.field').hidden = stockDividend;
     $('#tradeEditDate').value = taipeiDateString(new Date(trade.tradedAt));
     $('#tradeEditNotes').value = trade.notes || '';
     $('#tradeEditDialog').showModal();
@@ -593,16 +637,17 @@
     if (index < 0) return;
     const shares = Number($('#tradeEditShares').value);
     const price = Number($('#tradeEditPrice').value);
+    const editingDividend = trades[index].side === 'stock_dividend';
     const feeInput = $('#tradeEditFees').value.trim();
     const feesUnknown = feeInput === '' && Boolean(trades[index].feesUnknown);
     const fees = feeInput === '' ? 0 : Number(feeInput);
     const date = $('#tradeEditDate').value;
-    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
-      showMessage('資料需確認', '成交股數與單價必須大於 0，手續費不可小於 0。'); return;
+    if (!Number.isFinite(shares) || shares <= 0 || (!editingDividend && (!Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0))) {
+      showMessage('資料需確認', '股數必須大於 0；買進單價必須大於 0，手續費不可小於 0。'); return;
     }
     if (!date || Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())) { showMessage('資料需確認', '請選擇有效的成交日期。'); return; }
     const oldTrade = trades[index];
-    const editedTrade = { ...oldTrade, shares, price, fees, feesUnknown, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#tradeEditNotes').value.trim() };
+    const editedTrade = { ...oldTrade, shares, price: editingDividend ? 0 : price, fees: editingDividend ? 0 : fees, feesUnknown: editingDividend ? false : feesUnknown, tradedAt: new Date(`${date}T12:00:00+08:00`).toISOString(), notes: $('#tradeEditNotes').value.trim() };
     const button = $('#tradeEditSubmit'); button.disabled = true;
     try {
       const saved = await updateTradeRecord(editedTrade);
@@ -635,7 +680,7 @@
   });
   $('#confirmDelete').addEventListener('click', async () => {
     const item = holdings.find((row) => row.id === deleteTarget);
-    if (item && tradesFor(item.symbol).length) { $('#confirmDialog').close(); showMessage('無法刪除持股', '這筆持股已有交易紀錄。為保留交易歷史，請勿刪除；目前系統僅支援新增買進紀錄，尚未開放賣出記帳。'); deleteTarget = null; return; }
+    if (item && tradesFor(item.symbol).length) { $('#confirmDialog').close(); showMessage('無法刪除持股', '這筆持股已有紀錄。為保留歷史，請勿刪除；目前可新增買進與配股紀錄，尚未開放賣出記帳。'); deleteTarget = null; return; }
     const button = $('#confirmDelete'); button.disabled = true;
     try {
       if (cloudClient && item) { const { error } = await cloudClient.from('holdings').delete().eq('id', item.id); if (error) throw error; }

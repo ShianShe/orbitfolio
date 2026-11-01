@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=transactions-are-source">
+  <link rel="stylesheet" href="styles.css?v=stock-dividends">
 </head>
 <body>
   <section class="auth-gate" id="authGate" hidden>
@@ -109,7 +109,7 @@
             <article class="plan-detail-card"><small>資金安排</small><strong>賣出後先保留現金</strong></article>
           </div>
           <div class="plan-principle"><strong>執行原則</strong><p>避免市場急跌時恐慌賣出，同時避免只因等待回本而無限期延後退出。市場弱勢持續時，重新評估槓桿持有風險。</p></div>
-          <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股；此版僅支援新增買進紀錄，尚未提供賣出記帳。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
+          <div class="exit-note"><span>ⓘ</span><p>賣出建議不會自動扣除持股；此版可記錄買進與配股，尚未提供賣出記帳。</p><button class="text-button" id="exitLearnMore">了解計畫</button></div>
         </section>
       </div>
       <footer class="page-footer"><span>Orbitfolio <span>·</span> 你的投資，清晰管理。</span><span>資料儲存在你的瀏覽器中</span></footer>
@@ -124,10 +124,11 @@
         <label class="field"><span>股票代號 <b>*</b></span><input id="symbol" required maxlength="20" autocomplete="off" placeholder="例如 00631L"><small class="field-error" data-error="symbol"></small></label>
         <label class="field"><span>股票名稱 <b>*</b></span><input id="name" required maxlength="60" placeholder="輸入資產名稱"><small class="field-error" data-error="name"></small></label><div class="quote-lookup" id="quoteLookupStatus" role="status" aria-live="polite">輸入代號後自動帶入名稱及最近收盤價。</div>
         <label class="field"><span>資產類型 <b>*</b></span><select id="assetType" required><option value="ETF">ETF</option><option value="個股">個股</option></select></label>
+        <label class="field" id="initialAcquisitionField"><span>取得方式 <b>*</b></span><select id="initialAcquisitionType"><option value="buy">買進</option><option value="stock_dividend">配股（零成本）</option></select></label>
         <label class="field"><span>持有股數 <b>*</b></span><input id="shares" type="number" min="0.0001" step="any" required placeholder="0"></label>
-        <label class="field"><span id="costFieldLabel">買進單價</span><div class="input-prefix"><span>$</span><input id="cost" type="number" min="0.0001" step="any" required placeholder="0.00"></div><small class="field-hint" id="costLockHint" hidden>股數與均價由每筆成交紀錄自動加總，請在交易明細修改單筆。</small><small class="field-hint" id="initialFeeHint">此筆買進手續費可選填，並會納入加權均價。</small></label>
+        <label class="field" id="initialCostField"><span id="costFieldLabel">買進單價</span><div class="input-prefix"><span>$</span><input id="cost" type="number" min="0.0001" step="any" required placeholder="0.00"></div><small class="field-hint" id="costLockHint" hidden>股數與均價由每筆成交紀錄自動加總，請在交易明細修改單筆。</small><small class="field-hint" id="initialFeeHint">此筆買進手續費可選填，並會納入加權均價。</small></label>
         <label class="field" id="initialFeeField"><span>手續費 <small>選填</small></span><div class="input-prefix"><span>$</span><input id="initialFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
-        <label class="field"><span>買進日期 <small>選填</small></span><input id="purchaseDate" type="date"></label>
+        <label class="field"><span id="purchaseDateLabel">買進日期 <small>選填</small></span><input id="purchaseDate" type="date"></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="notes" rows="3" maxlength="500" placeholder="新增備註"></textarea></label>
       </div>
       <div class="modal-info">名稱與最近收盤價會依代號查詢 FinMind；資料可能延遲，盤中不提供即時成交價。查詢失敗時可手動輸入名稱，系統不會填入假價格。</div>
@@ -137,17 +138,18 @@
 
   <dialog id="buyDialog" class="modal">
     <form id="buyForm" novalidate>
-      <div class="modal-header"><div><div class="eyebrow">BUY TRANSACTION</div><h2>新增買進紀錄</h2><p class="buy-symbol" id="buySymbolLabel"></p></div><button type="button" class="close-button" data-close aria-label="關閉">×</button></div>
+      <div class="modal-header"><div><div class="eyebrow">HOLDING TRANSACTION</div><h2 id="buyDialogTitle">新增持股紀錄</h2><p class="buy-symbol" id="buySymbolLabel"></p></div><button type="button" class="close-button" data-close aria-label="關閉">×</button></div>
       <input type="hidden" id="buyHoldingId">
       <div class="form-grid">
-        <label class="field"><span>買進股數 <b>*</b></span><input id="buyShares" type="number" min="0.0001" step="0.0001" required placeholder="例如 10"></label>
-        <label class="field"><span>買進單價 <b>*</b></span><div class="input-prefix"><span>$</span><input id="buyPrice" type="number" min="0.0001" step="any" required placeholder="券商成交單價"></div></label>
-        <label class="field"><span>手續費 <small>選填，依券商實際金額</small></span><div class="input-prefix"><span>$</span><input id="buyFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
-        <div class="field"><span>本次總成本（自動計算）</span><div class="purchase-total-preview" id="buyTotalPreview">$0.00</div></div>
-        <label class="field"><span>成交日期 <b>*</b></span><input id="buyDate" type="date" required></label>
+        <label class="field"><span>紀錄類型 <b>*</b></span><select id="buyTransactionType"><option value="buy">買進</option><option value="stock_dividend">配股（零成本）</option></select></label>
+        <label class="field"><span id="buySharesLabel">買進股數 <b>*</b></span><input id="buyShares" type="number" min="0.0001" step="0.0001" required placeholder="例如 10"></label>
+        <label class="field buy-price-field"><span>買進單價 <b>*</b></span><div class="input-prefix"><span>$</span><input id="buyPrice" type="number" min="0.0001" step="any" required placeholder="券商成交單價"></div></label>
+        <label class="field buy-fees-field"><span>手續費 <small>選填，依券商實際金額</small></span><div class="input-prefix"><span>$</span><input id="buyFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
+        <div class="field buy-price-field"><span>本次總成本（自動計算）</span><div class="purchase-total-preview" id="buyTotalPreview">$0.00</div></div>
+        <label class="field"><span id="buyDateLabel">成交日期 <b>*</b></span><input id="buyDate" type="date" required></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="buyNotes" rows="2" maxlength="500" placeholder="例如：盤中零股買進"></textarea></label>
       </div>
-      <div class="modal-info">每筆成交會獨立保存。輸入實際成交單價及券商顯示的手續費，系統以「股數 × 單價 + 手續費」計入總成本與加權均價；不會估算手續費。</div>
+      <div class="modal-info" id="buyDialogInfo">每筆成交會獨立保存。輸入實際成交單價及券商顯示的手續費，系統以「股數 × 單價 + 手續費」計入總成本與加權均價；不會估算手續費。</div>
       <div class="modal-actions"><button type="button" class="button subtle" data-close>取消</button><button type="submit" class="button subtle" id="buySaveContinue">儲存並新增下一筆</button><button type="submit" class="button primary" id="buySubmit">確認買進</button></div>
     </form>
   </dialog>
@@ -157,10 +159,10 @@
       <div class="modal-header"><div><div class="eyebrow">EDIT TRANSACTION</div><h2>修改成交紀錄</h2><p class="buy-symbol" id="tradeEditSymbol"></p></div><button type="button" class="close-button" data-close aria-label="關閉">×</button></div>
       <input type="hidden" id="tradeEditId">
       <div class="form-grid">
-        <label class="field"><span>成交股數 <b>*</b></span><input id="tradeEditShares" type="number" min="0.0001" step="0.0001" required></label>
-        <label class="field"><span>成交單價 <b>*</b></span><div class="input-prefix"><span>$</span><input id="tradeEditPrice" type="number" min="0.0001" step="any" required></div></label>
-        <label class="field"><span>手續費 <small>選填</small></span><div class="input-prefix"><span>$</span><input id="tradeEditFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
-        <label class="field"><span>成交日期 <b>*</b></span><input id="tradeEditDate" type="date" required></label>
+        <label class="field"><span>股數 <b>*</b></span><input id="tradeEditShares" type="number" min="0.0001" step="0.0001" required></label>
+        <label class="field buy-price-field"><span>成交單價 <b>*</b></span><div class="input-prefix"><span>$</span><input id="tradeEditPrice" type="number" min="0.0001" step="any" required></div></label>
+        <label class="field buy-fees-field"><span>手續費 <small>選填</small></span><div class="input-prefix"><span>$</span><input id="tradeEditFees" type="number" min="0" step="0.01" placeholder="留白表示未填"></div></label>
+        <label class="field"><span>日期 <b>*</b></span><input id="tradeEditDate" type="date" required></label>
         <label class="field full"><span>備註 <small>選填</small></span><textarea id="tradeEditNotes" rows="2" maxlength="500"></textarea></label>
       </div>
       <div class="modal-info">儲存後會更新這一筆成交紀錄，持股與均價會依所有成交重新計算。</div>
@@ -174,6 +176,6 @@
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
-  <script src="app.js?v=transactions-are-source"></script>
+  <script src="app.js?v=stock-dividends"></script>
 </body>
 </html>
