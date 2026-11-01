@@ -57,7 +57,6 @@
     brand.setAttribute('aria-label', collapsed ? '展開左側導覽' : '收合左側導覽');
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
   }
-  document.documentElement.style.setProperty('--font-scale', 1.15);
   setSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true');
   $('#sidebarBrandToggle').addEventListener('click', (event) => {
     event.preventDefault();
